@@ -4,14 +4,11 @@
   "description": "NoLetMe — real-time reasoning-trajectory keyword stats for the DeepSeek Harness web chat. Tracks the We-need/Let's efficient trajectory vs the Let-me hesitant trajectory vs the The-user-wants neutral framing in the model's streaming reasoning blocks.",
   "type": "module",
   "main": "lib/index.js",
-  "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
     "./client": {
-      "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
     "./package.json": "./package.json"
@@ -28,8 +25,26 @@
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types verify.mjs"
   },
-  "dependencies": {
-    "react": "^18.2.0"
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "reasoning",
+    "chain-of-thought",
+    "trajectory"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yuer6327/NoLetMe.git"
+  },
+  "author": "Yuer6327",
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
@@ -43,6 +58,7 @@
     "@types/react-dom": "~18.3.0",
     "@types/node": "^22.0.0",
     "lightningcss": "^1.32.0",
+    "react": "^18.2.0",
     "tsdown": "^0.22.2",
     "typescript": "^6.0.3"
   },
