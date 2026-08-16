@@ -8,7 +8,7 @@
  */
 
 const APP_URL = process.argv[2] ?? 'http://127.0.0.1:3080/'
-const DEBUG = 'http://127.0.0.1:9222'
+const DEBUG = process.env.CDP_PORT ? 'http://127.0.0.1:' + process.env.CDP_PORT : 'http://127.0.0.1:9222'
 
 /** Minimal CDP client over a WebSocket. */
 class CdpClient {

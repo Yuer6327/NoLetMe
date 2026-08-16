@@ -5,13 +5,14 @@
  * framework `useSession` standard prop. This builds a `HostObservable` over
  * the *current* session's `ConversationSnapshot` (via `ctx.sessions.binding`
  * → `SessionFace`, which is `ISession & ObservableSnapshot<ConversationSnapshot>`)
- * and hands it to the component through the register() inject `hooks`
- * compartment as `useConversation`.
+ * and hands it to the consumer through a subscribe/getSnapshot pair.
  *
  * The observable re-targets whenever the session list's `current` selection
- * changes, and re-notifies on every snapshot publish of the tracked session —
+ * changes and re-notifies on every snapshot publish of the tracked session —
  * including `partial` reasoning deltas, which the session layer throttles to
- * at most one publish per animation frame.
+ * at most one publish per animation frame. When the selection moves to a new
+ * session it **notifies immediately** so consumers repaint against the new
+ * session's snapshot without waiting for that session to stream.
  */
 
 import type { ConversationSnapshot, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
@@ -40,15 +41,18 @@ export function createLiveConversation(
     const id = sessions.list.getSnapshot().current
     if (id === undefined) {
       snapshot = undefined
+      notify() // consumers must repaint to the no-session state immediately
       return
     }
     const session = sessions.binding(id)?.session
     if (session === undefined) {
       snapshot = undefined
+      notify()
       return
     }
     snapshot = session.getSnapshot()
     unsubSession = session.subscribe(notify)
+    notify() // selection moved: repaint now, before the new session publishes
   }
 
   const offList = sessions.list.subscribe(resubscribe)

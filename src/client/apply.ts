@@ -13,7 +13,7 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import { NoLetMePanel } from './NoLetMePanel.tsx'
-import { createLiveConversation } from './session-source.ts'
+import { createStatsStore } from './session-store.ts'
 import type { NoLetMeFace } from './slots.ts'
 import { en, NS, zh, type NoLetMeKey } from './locales.ts'
 
@@ -35,7 +35,8 @@ export function apply(ctx: ClientContext): void {
   // locale face, so the namespace must exist before the panel mounts.
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'noletme: dictionaries')
 
-  const conversation = createLiveConversation(ctx.sessions)
+  // The stats store owns live folding, full-history paging, and persistence.
+  const stats = createStatsStore(ctx.sessions)
 
   // `slots.inject` defers the registration until ui-layout declares
   // `shell.overlay` (handles boot-order regardless of the graph edge).
@@ -43,6 +44,6 @@ export function apply(ctx: ClientContext): void {
     name: 'shell.overlay',
     id: 'noletme',
     locale: NS,
-    inject: (): NoLetMeFace => ({ hooks: { conversation } }),
+    inject: (): NoLetMeFace => ({ hooks: { stats } }),
   }, NoLetMePanel))
 }

@@ -1,8 +1,9 @@
 /* NoLetMe reasoning-trajectory panel.
-   One element, two shapes: a compact mode pill when collapsed, a rounded
-   card when expanded, morphed by a spring driven from inline width/height/
-   border-radius (see NoLetMePanel.tsx). Anchored to the right dock so the
-   panel grows leftward from the edge.
+   One element, two rounded-rectangle shapes: a compact chip when collapsed,
+   a rounded card when expanded, morphed by a spring driven from inline
+   width/height/border-radius (see NoLetMePanel.tsx). Anchored below the
+   session header (clears the "Session log" download action) at the right
+   dock, growing leftward from the edge.
 
    Token-only styling mirroring DetailsPanel.module.css (--dsw-alias-* semantic
    aliases, theme shadows/fonts); light/dark flips ride the theme owner. The
@@ -12,7 +13,7 @@
 
 .root {
   position: fixed;
-  top: 16px;
+  top: 56px; /* below the session header's 32px action buttons */
   right: 16px;
   z-index: 40; /* above the overlay layer's own stacking of sibling entries */
   --noletme-max: min(560px, calc(100vh - 32px));
@@ -25,9 +26,9 @@
   will-change: width, height, border-radius;
 }
 
-/* --- collapsed pill (the whole surface is the button) --- */
+/* --- collapsed chip (the whole surface is the button) --- */
 
-.pill {
+.chip {
   position: absolute;
   top: 0;
   left: 0;
@@ -46,35 +47,35 @@
   white-space: nowrap;
 }
 
-.pill:hover {
+.chip:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.pillDot {
+.chipDot {
   flex: none;
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: 2px;
 }
 
-.pillDot[data-mode='efficient'] {
+.chipDot[data-mode='efficient'] {
   background: var(--dsw-alias-state-success-primary);
 }
 
-.pillDot[data-mode='hesitant'] {
+.chipDot[data-mode='hesitant'] {
   background: var(--dsw-alias-state-warn-primary);
 }
 
-.pillDot[data-mode='neutral'] {
+.chipDot[data-mode='neutral'] {
   background: var(--dsw-alias-label-secondary);
 }
 
-.pillMode {
+.chipMode {
   color: var(--dsw-alias-label-secondary);
   font-weight: 400;
 }
 
-.pill:focus-visible,
+.chip:focus-visible,
 .toggle:focus-visible {
   outline: 2px solid var(--dsw-alias-brand-primary);
   outline-offset: 1px;
@@ -192,6 +193,11 @@
   background: var(--dsw-alias-state-success-primary);
 }
 
+.liveDot[data-syncing] {
+  background: var(--dsw-alias-state-warn-primary);
+  animation: noletme-pulse 1.2s var(--ds-ease-in-out) infinite;
+}
+
 .root[data-streaming] .liveDot {
   animation: noletme-pulse 1.2s var(--ds-ease-in-out) infinite;
 }
@@ -201,10 +207,33 @@
   50% { opacity: 0.45; transform: scale(0.72); }
 }
 
-/* --- trajectory mode + share bars --- */
+/* --- trajectory mode (label + badge on one row) + share bars --- */
 
 .section {
   margin-bottom: 14px;
+}
+
+.modeRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.modeLabel {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Badge is plain colored text (no background) for readable contrast on the
+   panel surface — same idiom as dsh's own state-colored labels. */
+.modeBadge {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 600;
 }
 
 .sectionLabel {
@@ -213,31 +242,6 @@
   line-height: 18px;
   font-weight: 500;
   color: var(--dsw-alias-label-secondary);
-}
-
-.modeBadge {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  line-height: 18px;
-  font-weight: 500;
-}
-
-.modeBadge[data-mode='efficient'] {
-  color: var(--dsw-alias-state-success-primary);
-  background: var(--dsw-alias-state-success-secondary);
-}
-
-.modeBadge[data-mode='hesitant'] {
-  color: var(--dsw-alias-state-warn-primary);
-  background: var(--dsw-alias-state-warn-secondary);
-}
-
-.modeBadge[data-mode='neutral'] {
-  color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-layer-1);
 }
 
 .barRow {
@@ -317,7 +321,7 @@
   flex: none;
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: 2px;
 }
 
 .patternKey {
@@ -361,7 +365,7 @@
 }
 
 .healthValue[data-health='mid'] {
-  color: var(--dsw-alias-state-warn-primary);
+  color: var(--dsw-alias-state-warn-label);
 }
 
 .healthValue[data-health='high'] {
@@ -370,6 +374,8 @@
 
 /* Reduced motion: no pulse, no width tween, instant morph. */
 @media (prefers-reduced-motion: reduce) {
+  .liveDot,
+  .liveDot[data-syncing],
   .root[data-streaming] .liveDot {
     animation: none;
   }

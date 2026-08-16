@@ -2,36 +2,36 @@
  * NoLetMe reasoning-trajectory panel.
  *
  * A `shell.overlay` entry (root scope) docked to the top-right of the frame.
- * Reads the current session's live `ConversationSnapshot` through the injected
- * `useConversation` hook and folds its reasoning blocks into keyword stats in
- * real time (the session layer republishes the snapshot at most once per
- * animation frame as `reasoning-delta` chunks stream).
+ * Renders live per-session trajectory stats produced by the stats store
+ * (`session-store.ts`): real-time incremental folding, complete-history paging
+ * on session focus, and local persistence — the panel never re-counts what it
+ * already counted.
  *
- * One surface, two shapes: the same element is a compact mode pill when
- * collapsed and a rounded card when expanded, and the two shapes morph into
- * each other on a critically-damped spring (interruptible — a re-click
- * retargets from the on-screen values, never the targets). The pill↔card morph
- * follows Apple's fluid-interface principles: springs over keyframes,
- * anchoring the growth at the right edge (fixed `right`, so the panel grows
- * leftward from its dock), and a cross-fade instead of the spring under
- * `prefers-reduced-motion`.
+ * One surface, two rounded-rectangle shapes: a compact chip when collapsed
+ * and a card when expanded, morphed on a critically-damped spring
+ * (interruptible — a re-click retargets from the on-screen values, never the
+ * targets) anchored at the right dock so it grows leftward from the edge.
+ * The transition degrades to an instant swap under `prefers-reduced-motion`.
  *
  * Styling mirrors the shipped `DetailsPanel` (theme tokens only, CSS Modules,
- * hover-reveal scrollbar via the `--dsh-scrollbar-*` rebind the harness uses
- * for elevated surfaces, keyboard-focus + reduced-motion preserved) so the
- * panel reads as native dsh chrome rather than an add-on.
+ * hover-reveal scrollbar via the harness's `--dsh-scrollbar-*` elevated-surface
+ * rebind, keyboard-focus + reduced-motion preserved).
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { computeStats, formatCount } from './stats.ts'
+import { formatCount, type TrajectoryStats } from './stats.ts'
 import { GROUPS, PATTERNS, type Group, type Mode } from './keywords.ts'
 import type { NoLetMePanelProps } from './slots.ts'
 import css from './NoLetMePanel.module.css'
 
 /** Card width when expanded. */
 const CARD_W = 300
-/** Collapsed pill height. */
-const PILL_H = 34
+/** Collapsed chip height. */
+const CHIP_H = 36
+/** Collapsed chip corner radius (a rounded rectangle, not a pill). */
+const CHIP_R = 10
+/** Expanded card corner radius. */
+const CARD_R = 12
 /** Card content cap: 560px or the viewport minus dock margins. */
 const MAX_H = () => Math.min(560, Math.max(240, (typeof window === 'undefined' ? 900 : window.innerHeight) - 32))
 
@@ -41,14 +41,21 @@ const SPRING_OMEGA = (2 * Math.PI) / SPRING_RESPONSE
 const SPRING_K = SPRING_OMEGA * SPRING_OMEGA
 const SPRING_C = 2 * Math.sqrt(SPRING_K) // zeta = 1.0
 
-/** Theme alias for one trajectory category (dsh state tokens). */
-const GROUP_COLOR: Readonly<Record<Group, string>> = {
+/** Accent color for dots and bars (bright state tokens). */
+const GROUP_ACCENT: Readonly<Record<Group, string>> = {
   efficient: 'var(--dsw-alias-state-success-primary)',
   hesitant: 'var(--dsw-alias-state-warn-primary)',
   neutral: 'var(--dsw-alias-label-secondary)',
 }
 
-/** Animated morph state. `o` = card-layer opacity (pill = 1 − o). */
+/** Readable text color for the mode badge (no background; warn uses the harness's readable label token). */
+const MODE_TEXT: Readonly<Record<Group, string>> = {
+  efficient: 'var(--dsw-alias-state-success-primary)',
+  hesitant: 'var(--dsw-alias-state-warn-label)',
+  neutral: 'var(--dsw-alias-label-secondary)',
+}
+
+/** Animated morph state. `o` = card-layer opacity (chip = 1 − o). */
 interface Morph {
   w: number
   h: number
@@ -56,7 +63,7 @@ interface Morph {
   o: number
 }
 
-const PILL_MORPH: Morph = { w: 0, h: PILL_H, r: 999, o: 0 }
+const CHIP_MORPH: Morph = { w: 0, h: CHIP_H, r: CHIP_R, o: 0 }
 
 /** Read the persisted open/collapsed preference (best-effort). */
 function readOpenPreference(): boolean {
@@ -76,20 +83,20 @@ function writeOpenPreference(open: boolean): void {
   }
 }
 
-/** The panel: one element that morphs between pill (collapsed) and card (expanded). */
-export function NoLetMePanel({ useConversation, t }: NoLetMePanelProps) {
-  const snapshot = useConversation(state => state)
-  const stats = useMemo(() => computeStats(snapshot), [snapshot])
+/** The panel: one element that morphs between chip (collapsed) and card (expanded). */
+export function NoLetMePanel({ useStats, t }: NoLetMePanelProps) {
+  const snap = useStats(state => state)
+  const stats = snap.stats
   const [open, setOpen] = useState(readOpenPreference)
 
   const cardRef = useRef<HTMLDivElement>(null)
-  const pillRef = useRef<HTMLButtonElement>(null)
+  const chipRef = useRef<HTMLButtonElement>(null)
   const [cardH, setCardH] = useState(0)
-  const [pillW, setPillW] = useState(0)
+  const [chipW, setChipW] = useState(0)
 
   // Live morph values + per-axis velocity (presentation state for the spring).
-  const [morph, setMorph] = useState<Morph>(PILL_MORPH)
-  const live = useRef({ ...PILL_MORPH, vw: 0, vh: 0, vr: 0, vo: 0, running: false })
+  const [morph, setMorph] = useState<Morph>(CHIP_MORPH)
+  const live = useRef({ ...CHIP_MORPH, vw: 0, vh: 0, vr: 0, vo: 0, running: false })
   const first = useRef(true)
 
   const toggle = (): void => {
@@ -100,27 +107,27 @@ export function NoLetMePanel({ useConversation, t }: NoLetMePanelProps) {
     })
   }
 
-  // Measure the card's natural (uncapped) height and the pill's natural width.
+  // Measure the card's natural (uncapped) height and the chip's natural width.
   useEffect(() => {
     const card = cardRef.current
-    const pill = pillRef.current
-    if (card === null || pill === null) return
+    const chip = chipRef.current
+    if (card === null || chip === null) return
     const cardObs = new ResizeObserver(() => setCardH(card.offsetHeight))
-    const pillObs = new ResizeObserver(() => setPillW(pill.offsetWidth))
+    const chipObs = new ResizeObserver(() => setChipW(chip.offsetWidth))
     cardObs.observe(card)
-    pillObs.observe(pill)
+    chipObs.observe(chip)
     return () => {
       cardObs.disconnect()
-      pillObs.disconnect()
+      chipObs.disconnect()
     }
   }, [])
 
-  // Morph spring: retarget whenever open state, content height, or pill width
+  // Morph spring: retarget whenever open state, content height, or chip width
   // moves. Starts from the live presentation values (interruptible).
   useEffect(() => {
     const target: Morph = open
-      ? { w: CARD_W, h: Math.min(cardH || CARD_W, MAX_H()), r: 12, o: 1 }
-      : { w: pillW || 110, h: PILL_H, r: 999, o: 0 }
+      ? { w: CARD_W, h: Math.min(cardH || CARD_W, MAX_H()), r: CARD_R, o: 1 }
+      : { w: chipW || 108, h: CHIP_H, r: CHIP_R, o: 0 }
 
     if (first.current) {
       first.current = false
@@ -187,10 +194,10 @@ export function NoLetMePanel({ useConversation, t }: NoLetMePanelProps) {
       s.running = false
       cancelAnimationFrame(raf)
     }
-  }, [open, cardH, pillW])
+  }, [open, cardH, chipW])
 
   const cardVisible = morph.o > 0
-  const pillVisible = morph.o < 1
+  const chipVisible = morph.o < 1
   const mode = stats?.mode
 
   return (
@@ -202,23 +209,23 @@ export function NoLetMePanel({ useConversation, t }: NoLetMePanelProps) {
       aria-label={t('panel.aria')}
       style={{ width: morph.w, height: morph.h, borderRadius: morph.r }}
     >
-      {/* Collapsed pill layer (opacity fades out as the card grows in). */}
+      {/* Collapsed chip layer (opacity fades out as the card grows in). */}
       <button
-        ref={pillRef}
+        ref={chipRef}
         type="button"
-        className={css.pill}
+        className={css.chip}
         onClick={toggle}
         aria-expanded={open}
         title={t('panel.title')}
         style={{
           opacity: 1 - morph.o,
-          visibility: pillVisible ? 'visible' : 'hidden',
+          visibility: chipVisible ? 'visible' : 'hidden',
           pointerEvents: morph.o < 0.5 ? 'auto' : 'none',
         }}
       >
-        <span className={css.pillDot} data-mode={mode} aria-hidden="true" />
+        <span className={css.chipDot} data-mode={mode} aria-hidden="true" />
         <span>NoLetMe</span>
-        {mode !== undefined && <span className={css.pillMode}>{t(`mode.${mode}`)}</span>}
+        {mode !== undefined && <span className={css.chipMode}>{t(`mode.${mode}`)}</span>}
       </button>
 
       {/* Expanded card layer (clipped by the morphing root while it grows). */}
@@ -231,7 +238,7 @@ export function NoLetMePanel({ useConversation, t }: NoLetMePanelProps) {
           pointerEvents: morph.o > 0.5 ? 'auto' : 'none',
         }}
       >
-        <PanelCard open={open} onToggle={toggle} t={t} stats={stats} />
+        <PanelCard open={open} onToggle={toggle} t={t} stats={stats} loading={snap.loading} />
       </div>
     </div>
   )
@@ -243,11 +250,13 @@ function PanelCard({
   onToggle,
   t,
   stats,
+  loading,
 }: {
   open: boolean
   onToggle: () => void
   t: NoLetMePanelProps['t']
-  stats: ReturnType<typeof computeStats>
+  stats: TrajectoryStats | null
+  loading: boolean
 }) {
   return (
     <>
@@ -271,7 +280,7 @@ function PanelCard({
           <p className={css.empty}>{t('panel.noSession')}</p>
         ) : (
           <>
-            <StatusRow stats={stats} t={t} />
+            <StatusRow stats={stats} loading={loading} t={t} />
             <ModeSection stats={stats} t={t} />
             <PatternSection stats={stats} t={t} />
             <Footer stats={stats} t={t} />
@@ -282,13 +291,17 @@ function PanelCard({
   )
 }
 
-/** Live status strip: streaming dot, reasoning block / char counts, replies. */
-function StatusRow({ stats, t }: { stats: NonNullable<ReturnType<typeof computeStats>>; t: NoLetMePanelProps['t'] }) {
+/** Live status strip: streaming dot, sync state, reasoning block / char counts, replies. */
+function StatusRow({ stats, loading, t }: {
+  stats: NonNullable<TrajectoryStats>
+  loading: boolean
+  t: NoLetMePanelProps['t']
+}) {
   return (
     <div className={css.status}>
       <span className={css.statusItem}>
-        <span className={css.liveDot} aria-hidden="true" />
-        {stats.streaming ? t('panel.streaming') : t('panel.idle')}
+        <span className={css.liveDot} data-syncing={loading || undefined} aria-hidden="true" />
+        {loading ? t('panel.syncing') : stats.streaming ? t('panel.streaming') : t('panel.idle')}
       </span>
       <span className={css.statusItem}>
         {t('panel.reasoningBlocks')}
@@ -306,21 +319,23 @@ function StatusRow({ stats, t }: { stats: NonNullable<ReturnType<typeof computeS
   )
 }
 
-/** Trajectory-mode badge plus per-category share bars. */
-function ModeSection({ stats, t }: { stats: NonNullable<ReturnType<typeof computeStats>>; t: NoLetMePanelProps['t'] }) {
+/** Trajectory-mode badge on the same row as the label, plus per-category share bars. */
+function ModeSection({ stats, t }: { stats: NonNullable<TrajectoryStats>; t: NoLetMePanelProps['t'] }) {
   return (
     <section className={css.section}>
-      <h3 className={css.sectionLabel}>{t('panel.modeLabel')}</h3>
-      <span className={css.modeBadge} data-mode={stats.mode}>
-        {t(`mode.${stats.mode}`)}
-      </span>
+      <div className={css.modeRow}>
+        <h3 className={css.modeLabel}>{t('panel.modeLabel')}</h3>
+        <span className={css.modeBadge} data-mode={stats.mode} style={{ color: MODE_TEXT[stats.mode] }}>
+          {t(`mode.${stats.mode}`)}
+        </span>
+      </div>
       {GROUPS.map(group => (
         <div className={css.barRow} key={group}>
           <span className={css.barLabel}>{t(`group.${group}`)}</span>
           <span className={css.barTrack}>
             <span
               className={css.barFill}
-              style={{ width: `${Math.round(stats.shares[group] * 100)}%`, background: GROUP_COLOR[group] }}
+              style={{ width: `${Math.round(stats.shares[group] * 100)}%`, background: GROUP_ACCENT[group] }}
             />
           </span>
           <span className={css.barValue}>{stats.groups[group]}</span>
@@ -331,15 +346,15 @@ function ModeSection({ stats, t }: { stats: NonNullable<ReturnType<typeof comput
 }
 
 /** Keyword breakdown: nonzero patterns grouped by category, plus raw word metrics. */
-function PatternSection({ stats, t }: { stats: NonNullable<ReturnType<typeof computeStats>>; t: NoLetMePanelProps['t'] }) {
-  const rows = stats.patterns
+function PatternSection({ stats, t }: { stats: NonNullable<TrajectoryStats>; t: NoLetMePanelProps['t'] }) {
+  const rows = useMemo(() => stats.patterns
     .map((count, index) => ({ pattern: PATTERNS[index], count, index }))
     .filter(row => row.count > 0)
     .sort((a, b) => {
       const ga = GROUPS.indexOf(a.pattern.group)
       const gb = GROUPS.indexOf(b.pattern.group)
       return ga !== gb ? ga - gb : b.count - a.count
-    })
+    }), [stats])
 
   return (
     <section className={css.section}>
@@ -370,7 +385,7 @@ function PatternSection({ stats, t }: { stats: NonNullable<ReturnType<typeof com
             >
               <span
                 className={css.patternDot}
-                style={{ background: GROUP_COLOR[row.pattern.group] }}
+                style={{ background: GROUP_ACCENT[row.pattern.group] }}
                 aria-hidden="true"
               />
               <span className={css.patternKey}>{t(row.pattern.label)}</span>
@@ -384,7 +399,7 @@ function PatternSection({ stats, t }: { stats: NonNullable<ReturnType<typeof com
 }
 
 /** Footer: hesitation-pressure health note. */
-function Footer({ stats, t }: { stats: NonNullable<ReturnType<typeof computeStats>>; t: NoLetMePanelProps['t'] }) {
+function Footer({ stats, t }: { stats: NonNullable<TrajectoryStats>; t: NoLetMePanelProps['t'] }) {
   const health: 'low' | 'mid' | 'high' = stats.hesitation === 0
     ? 'low'
     : stats.hesitation < 0.5 && stats.words.letMe <= 5

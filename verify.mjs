@@ -124,5 +124,72 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('fold: null on no snapshot', computeStats(undefined), null)
 }
 
+// --- 8. Incremental accumulator: fold-once, idempotent, compaction reset, persistence ---
+{
+  const { SessionStatsAccumulator } = await import('./src/client/accumulator.ts')
+  const mkNode = (seq, text) => ({
+    kind: 'assistant', seq, time: 0, turn: 1, step: 1,
+    blocks: [{ kind: 'reasoning', text }],
+  })
+  const snap = (nodes, partial = null) => ({ sessionId: 's1', nodes, partial })
+
+  const acc = new SessionStatsAccumulator()
+  const a = mkNode(10, 'We need to fix this. Let\'s move.')
+  const b = mkNode(11, 'Let me think about it.')
+  acc.fold(snap([a, b]))
+  check('accumulator: replies after first fold', acc.counts.replies, 2)
+  check('accumulator: we from first fold', acc.counts.words.we, 1)
+  check('accumulator: letMe from first fold', acc.counts.words.letMe, 1)
+
+  // Idempotent: folding the same snapshot adds nothing.
+  acc.fold(snap([a, b]))
+  check('accumulator: idempotent fold', acc.counts.replies, 2)
+
+  // Incremental: appending a newer node only counts the new one.
+  const c = mkNode(12, 'Good. Let\'s verify the tests now.')
+  acc.fold(snap([a, b, c]))
+  check('accumulator: incremental replies', acc.counts.replies, 3)
+  check('accumulator: incremental lets', acc.counts.words.lets, 2)
+
+  // Loaded-older history (seq < min) is folded too.
+  const z = mkNode(5, 'Let\'s start fresh. We need context.')
+  acc.fold(snap([z, a, b, c]))
+  check('accumulator: older-history replies', acc.counts.replies, 4)
+  check('accumulator: older-history we', acc.counts.words.we, 2)
+
+  // Compaction reset: a newer compaction node rewrites history and recounts.
+  const fresh = mkNode(20, 'We need to redo everything.')
+  const compSnap = {
+    sessionId: 's1',
+    nodes: [
+      { kind: 'compaction', seq: 19, time: 0, summary: 'rewritten', summaryEventSeq: null, shadowedItemCount: null, shadowedTokenCount: null },
+      fresh,
+    ],
+    partial: null,
+  }
+  acc.fold(compSnap)
+  check('accumulator: compaction reset replies', acc.counts.replies, 1)
+  check('accumulator: compaction reset we', acc.counts.words.we, 1)
+
+  // Persist → load round-trip preserves counts and the high-water mark.
+  const persisted = acc.persist()
+  const reloaded = SessionStatsAccumulator.load(persisted)
+  check('accumulator: reload replies', reloaded.counts.replies, 1)
+  check('accumulator: reload we', reloaded.counts.words.we, 1)
+  check('accumulator: reload keeps fold-idempotence', reloaded.fold(compSnap), false)
+  check('accumulator: load garbage → fresh', SessionStatsAccumulator.load('nonsense').counts.replies, 0)
+
+  // toStats folds live partial on top without mutating durable counts.
+  const partialSnap = snap([fresh], { turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'Good. Let\'s go.' }] })
+  const live = acc.toStats(partialSnap)
+  check('accumulator: toStats streaming', live.streaming, true)
+  check('accumulator: toStats replies unchanged', live.replies, 1)
+  check('accumulator: toStats lets from partial', live.words.lets, 1)
+  check('accumulator: durable lets unchanged by toStats', acc.counts.words.lets, 0)
+}
+
 console.log(failures === 0 ? '\nAll checks passed ✓' : `\n${failures} check(s) FAILED ✗`)
+// Let pending dynamic-import module jobs settle before exiting (avoids a
+// Windows libuv teardown race that otherwise asserts in win/async.c).
+await new Promise(resolve => setTimeout(resolve, 100))
 process.exit(failures === 0 ? 0 : 1)

@@ -128,21 +128,35 @@ modules resolve through the frozen module table, everything else inlines, and
 
 ## Usage
 
-- The panel sits **top-right**, floating over the conversation frame.
-- **Collapsed** it is a small mode pill (dot + "NoLetMe" + current mode);
-  click it to expand into the rounded card. **Expanded** it shows the live
-  status strip (streaming dot, reasoning blocks / chars, visible replies),
-  the trajectory-mode badge, per-category share bars, raw research metrics
-  (`we · let's · let me · I`), the keyword breakdown, and a hesitation-pressure
-  health note.
-- The pill↔card transition is a single surface that morphs on a
+- The panel docks **below the session header** at the top-right (clears the
+  "Session log" download action), floating over the conversation frame.
+- **Collapsed** it is a compact rounded-rectangle chip (dot + "NoLetMe" +
+  current mode); click it to expand into the card. **Expanded** it shows the
+  live status strip (streaming/syncing dot, reasoning blocks / chars, visible
+  replies), the trajectory-mode badge on the same row as its label,
+  per-category share bars, raw research metrics (`we · let's · let me · I`),
+  the keyword breakdown, and a hesitation-pressure health note.
+- The chip↔card transition is a single surface that morphs on a
   critically-damped spring (interruptible, anchored at the right dock), and
-  degrades to an instant cross-fade under `prefers-reduced-motion`. The open
-  state is remembered.
+  degrades to an instant swap under `prefers-reduced-motion`. The open state
+  is remembered.
 - The panel body's scrollbar is hover-revealed through the harness's own
   `--dsh-scrollbar-*` tokens (invisible until hovered).
-- Stats are per-session and reset when you switch sessions. No data leaves
-  your browser.
+
+### Data freshness, persistence, and privacy
+
+- **Real-time**: stats fold incrementally on every streamed reasoning delta
+  (at most once per animation frame) — nothing re-walks the conversation.
+- **Session switching**: switching conversations immediately repaints the new
+  session's stats from its local cache, then pages in the **complete history**
+  (a "syncing" indicator shows meanwhile) so the count covers the whole
+  conversation.
+- **Local persistence**: each session's folded counts are stored in
+  `localStorage` (`dsh-noletme.stats.<sessionId>`), so reopening a
+  conversation does not recount it — only new messages are folded.
+- **Robustness**: compaction rewrites reset the count once; history paging is
+  capped and aborts when you switch away; storage failures are swallowed.
+- No data leaves your browser.
 
 ## Architecture
 
@@ -151,9 +165,11 @@ src/
 ├── index.ts            # Node (host) half — no-op, satisfies the Loader
 └── client/
     ├── index.ts        # browser bundle entry (apply/inject)
-    ├── apply.ts        # registers the shell.overlay entry
+    ├── apply.ts        # registers the shell.overlay entry + the stats store
     ├── slots.ts        # inject-face + composed-props contracts
     ├── session-source.ts # current-session ConversationSnapshot observable
+    ├── session-store.ts  # stats store: live folding, full-history paging, persistence
+    ├── accumulator.ts  # per-session incremental fold + compaction + serialize
     ├── keywords.ts     # the research-backed taxonomy
     ├── stats.ts        # counting engine (longest-match walk, per-block cache)
     ├── NoLetMePanel.tsx / .module.css
@@ -162,11 +178,12 @@ src/
 
 - Reasoning streams arrive as `reasoning-delta` chunks; the session layer
   accumulates them into `ConversationSnapshot.partial` (published at most once
-  per animation frame). Finalized turns land in `snapshot.nodes`. The panel
-  folds both, caching counts per block object so each stream delta only
-  recounts the block that actually changed.
+  per animation frame). Finalized turns land in `snapshot.nodes`. The stats
+  store folds both **incrementally** (per-block counts cached by block
+  identity, new nodes gated by a seq high-water mark) and republishes a ready
+  `TrajectoryStats` — the panel never recomputes a session from scratch.
 - `shell.overlay` is the layout's frame-wide additive seat; the panel is a
-  click-through-opt-in floating card that mirrors the DetailsPanel styling.
+  click-through-opt-in floating surface that mirrors the DetailsPanel styling.
 
 ## License
 

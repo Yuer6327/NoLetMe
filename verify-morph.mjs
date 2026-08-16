@@ -10,7 +10,7 @@
 import { writeFileSync } from 'node:fs'
 
 const APP_URL = process.argv[2] ?? 'http://127.0.0.1:3100/'
-const DEBUG = 'http://127.0.0.1:9223'
+const DEBUG = process.env.CDP_PORT ? 'http://127.0.0.1:' + process.env.CDP_PORT : 'http://127.0.0.1:9223'
 
 class Cdp {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); this.handler = null }
@@ -94,10 +94,11 @@ async function main() {
   const pillBox = await evalJs(`(() => {
     const pill = document.querySelector('button[title*="NoLetMe"]');
     if (!pill) return null;
-    const r = pill.parentElement.getBoundingClientRect();
-    return { w: Math.round(r.width), h: Math.round(r.height), pillVis: getComputedStyle(pill).visibility, pillOpacity: getComputedStyle(pill).opacity };
+    const root = pill.parentElement;
+    const r = root.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), pillVis: getComputedStyle(pill).visibility, pillOpacity: getComputedStyle(pill).opacity, radius: getComputedStyle(root).borderRadius };
   })()`)
-  console.log('collapsed pill root box:', JSON.stringify(pillBox))
+  console.log('collapsed chip root box:', JSON.stringify(pillBox))
   await cdp.send('Page.captureScreenshot', { format: 'png' }).then(r => { writeFileSync('/tmp/noletme-pill.png', Buffer.from(r.data, 'base64')) })
 
   // Expand: click the pill.
@@ -117,12 +118,13 @@ async function main() {
   console.log('re-expanded card root box:', JSON.stringify(cardBox))
   await cdp.send('Page.captureScreenshot', { format: 'png' }).then(r => { writeFileSync('/tmp/noletme-card.png', Buffer.from(r.data, 'base64')) })
 
-  const pillIsPill = pillBox && pillBox.w < 160 && pillBox.h <= 36
+  const pillIsPill = pillBox && pillBox.w < 170 && pillBox.h <= 42
+  const chipRoundedRect = pillBox && pillBox.radius !== '999px' && Number.parseInt(pillBox.radius, 10) < 30
   const cardIsCard = cardBox && cardBox.w >= 295 && cardBox.w <= 305
-  console.log('pill shaped:', pillIsPill, '| card shaped:', cardIsCard)
+  console.log('chip shaped:', pillIsPill, '| chip is rounded-rect (radius', pillBox?.radius, '):', chipRoundedRect, '| card shaped:', cardIsCard)
   console.log('console errors:', errors.length)
 
-  const ok = pillIsPill && cardIsCard && errors.length === 0
+  const ok = pillIsPill && chipRoundedRect && cardIsCard && errors.length === 0
   console.log(ok ? 'MORPH VERIFIED ✓' : 'MORPH CHECK FAILED ✗')
   process.exit(ok ? 0 : 2)
 }

@@ -8,15 +8,15 @@
  * independent pass for the raw research word metrics (`we`, `let's`, `let me`,
  * first-person `I`).
  *
- * Per-block counts are cached in a WeakMap keyed by the AssistantBlock object
- * identity. The conversation snapshot is immutable and keeps stable references
- * for unchanged nodes, so a stream delta only recounts the one in-flight block
- * that actually changed — re-renders stay O(delta), not O(session).
+ * The engine is **incremental**: per-block counts are cached in a WeakMap
+ * keyed by the AssistantBlock object identity, and the session accumulator
+ * (see `accumulator.ts`) folds only nodes whose seq lies outside the already
+ * counted range. A stream delta therefore recounts at most the one in-flight
+ * block, and revisiting a session after a reload adds only what is new — it
+ * never re-walks the whole conversation.
  */
 
-import type {
-  AssistantBlock, ConversationNode, ConversationSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { AssistantBlock, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   FIRST_TOKEN_ORDER, GROUPS, LATER_TOKEN_ORDER, PATTERNS, type Group, type Mode,
 } from './keywords.ts'
@@ -41,6 +41,15 @@ export interface BlockCounts {
   readonly patterns: PatternCounts
   readonly words: WordCounts
   readonly chars: number
+}
+
+/** Mutable session-wide fold target. */
+export interface SessionCounts {
+  patterns: number[]
+  words: WordCounts
+  blocks: number
+  chars: number
+  replies: number
 }
 
 /** Session-wide trajectory stats folded from a conversation snapshot. */
@@ -140,8 +149,13 @@ export function countReasoningText(text: string): BlockCounts {
   return { patterns, words: { we, lets, letMe, firstPerson }, chars: text.length }
 }
 
-/** Cached per-block count (streaming deltas replace the block object, so only the changed block recounts). */
-function blockCounts(block: AssistantBlock): BlockCounts {
+/**
+ * Cached per-block count. Streaming deltas replace the block object, so only
+ * the changed block recounts.
+ * @param block - one reasoning block.
+ * @returns its counts (cached by block identity).
+ */
+export function countBlock(block: AssistantBlock): BlockCounts {
   if (block.kind !== 'reasoning' || block.text === '') return EMPTY_COUNTS
   const cached = blockCache.get(block)
   if (cached !== undefined) return cached
@@ -150,48 +164,43 @@ function blockCounts(block: AssistantBlock): BlockCounts {
   return counts
 }
 
+/** Fresh, zeroed session fold target. */
+export function emptySessionCounts(): SessionCounts {
+  return {
+    patterns: new Array<number>(PATTERNS.length).fill(0),
+    words: { we: 0, lets: 0, letMe: 0, firstPerson: 0 },
+    blocks: 0,
+    chars: 0,
+    replies: 0,
+  }
+}
+
 /**
- * Fold a conversation snapshot into session-wide trajectory stats.
- * @param snapshot - current conversation snapshot (undefined → null result).
- * @returns stats, or null while no session is current.
+ * Fold one block into a session count target (incremental: reuses the block
+ * cache). Non-reasoning blocks contribute nothing.
+ * @param target - mutable session counts.
+ * @param block - assistant block.
  */
-export function computeStats(snapshot: ConversationSnapshot | undefined): TrajectoryStats | null {
-  if (snapshot === undefined) return null
+export function foldBlock(target: SessionCounts, block: AssistantBlock): void {
+  if (block.kind !== 'reasoning') return
+  const counts = countBlock(block)
+  if (counts.chars === 0) return
+  target.blocks += 1
+  target.chars += counts.chars
+  for (let i = 0; i < target.patterns.length; i++) target.patterns[i] += counts.patterns[i]
+  target.words.we += counts.words.we
+  target.words.lets += counts.words.lets
+  target.words.letMe += counts.words.letMe
+  target.words.firstPerson += counts.words.firstPerson
+}
 
-  const patterns = new Array<number>(PATTERNS.length).fill(0)
-  const words: WordCounts = { we: 0, lets: 0, letMe: 0, firstPerson: 0 }
-  const seen = new Set<AssistantBlock>()
-  let blocks = 0
-  let chars = 0
-  let replies = 0
-
-  const fold = (block: AssistantBlock): void => {
-    if (block.kind !== 'reasoning' || seen.has(block)) return
-    seen.add(block)
-    const counts = blockCounts(block)
-    blocks += 1
-    chars += counts.chars
-    for (let i = 0; i < patterns.length; i++) patterns[i] += counts.patterns[i]
-    words.we += counts.words.we
-    words.lets += counts.words.lets
-    words.letMe += counts.words.letMe
-    words.firstPerson += counts.words.firstPerson
-  }
-
-  for (const node of snapshot.nodes as readonly ConversationNode[]) {
-    if (node.kind !== 'assistant') continue
-    replies += 1
-    for (const block of node.blocks) fold(block)
-  }
-  if (snapshot.partial !== null) {
-    for (const block of snapshot.partial.blocks) fold(block)
-  }
-
+/** Derive the presentational trajectory stats from a fold target. */
+export function toTrajectoryStats(counts: SessionCounts, streaming: boolean): TrajectoryStats {
   const groups = {} as Record<Group, number>
   for (const group of GROUPS) {
     let total = 0
     for (let i = 0; i < PATTERNS.length; i++) {
-      if (PATTERNS[i].group === group) total += patterns[i]
+      if (PATTERNS[i].group === group) total += counts.patterns[i]
     }
     groups[group] = total
   }
@@ -201,27 +210,47 @@ export function computeStats(snapshot: ConversationSnapshot | undefined): Trajec
   for (const group of GROUPS) shares[group] = total === 0 ? 0 : groups[group] / total
 
   // Research classifier: any `let me` → hesitant; else bare `we`/`let's` → efficient.
-  const mode: Mode = words.letMe > 0
+  const mode: Mode = counts.words.letMe > 0
     ? 'hesitant'
-    : words.we > 0 || words.lets > 0
+    : counts.words.we > 0 || counts.words.lets > 0
       ? 'efficient'
       : 'neutral'
 
-  const denominator = words.we + words.lets + words.letMe
-  const hesitation = denominator === 0 ? 0 : words.letMe / denominator
+  const denominator = counts.words.we + counts.words.lets + counts.words.letMe
+  const hesitation = denominator === 0 ? 0 : counts.words.letMe / denominator
 
   return {
-    blocks,
-    chars,
-    replies,
-    streaming: snapshot.partial !== null,
+    blocks: counts.blocks,
+    chars: counts.chars,
+    replies: counts.replies,
+    streaming,
     groups,
-    patterns,
-    words,
+    patterns: counts.patterns,
+    words: { ...counts.words },
     shares,
     mode,
     hesitation,
   }
+}
+
+/**
+ * One-shot fold over a snapshot — kept for tests and the no-session null case.
+ * The live panel uses the incremental accumulator (`accumulator.ts`).
+ * @param snapshot - current conversation snapshot (undefined → null result).
+ * @returns stats, or null while no session is current.
+ */
+export function computeStats(snapshot: ConversationSnapshot | undefined): TrajectoryStats | null {
+  if (snapshot === undefined) return null
+  const counts = emptySessionCounts()
+  for (const node of snapshot.nodes) {
+    if (node.kind !== 'assistant') continue
+    counts.replies += 1
+    for (const block of node.blocks) foldBlock(counts, block)
+  }
+  if (snapshot.partial !== null) {
+    for (const block of snapshot.partial.blocks) foldBlock(counts, block)
+  }
+  return toTrajectoryStats(counts, snapshot.partial !== null)
 }
 
 /** Human-scale reasoning characters: 12.4K / 1.2M. */
