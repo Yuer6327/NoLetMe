@@ -19,17 +19,53 @@ Modules, light/dark and reduced-motion preserved) and mounts through the
 official `shell.overlay` slot — nothing in the shipped UI is replaced or
 patched.
 
-## Background
+## 数据来源与证据链 (Data sources & evidence chain)
 
-The keyword list is grounded in the public investigation of the **DeepSeek V4
-Pro GA 0813** post-training overfitting event: the RL checkpoints trained on
-DeepSeek Harness's **Minimal** preset (the "exact RL prompt and schemas"
-two-tool scaffold) collapse on the wider Standard catalog — 99/96 in Minimal vs
-91/92 in Standard/PTC on Project2 V4.1b. Trajectory word counts separate the
-two modes cleanly: `we`/`let's` with **zero** `let me` (minimal), vs `let me`
-in the hundreds (standard).
+The keyword taxonomy is **not invented** — every category traces to the public
+[xiaobright/modeltest](https://github.com/xiaobright/modeltest) repository and
+its investigation of the **DeepSeek V4 Pro GA 0813** post-training overfitting
+event (the RL checkpoints trained on DeepSeek Harness's "Minimal" preset —
+the "exact RL prompt and schemas" two-tool scaffold — collapse on the wider
+Standard tool catalog).
 
-Full evidence and the event write-up: [`docs/research.md`](docs/research.md).
+**The test set.** Project2 V4.1b — a real broken ESP-IDF embedded-engineering
+task, **formally frozen** ([`PROJECT_FROZEN.md`](https://github.com/xiaobright/modeltest/blob/main/PROJECT_FROZEN.md),
+frozen 2026-07-23; scoring rules & hidden tests SHA-256-pinned 2026-07-19).
+
+**The measured evidence.** `evaluator/trajectory_evidence/derived/trajectory_stats.json`
+(SHA-256-pinned per run; counting over completed assistant reasoning blocks,
+streaming chunks excluded):
+
+| run (model / config) | Ability | `we` | `let me` | `let's` | `I` | visible replies |
+|---|---|---:|---:|---:|---:|---:|
+| V4 Pro / **Minimal** WSL | 99 | 272 | **0** | 101 | 17 | 1 |
+| V4 Pro / **Minimal** WSL | 96 | 231 | **0** | 117 | 18 | 1 |
+| V4 Pro / **anchored-standard** Win | 98 | 179 | **1** | 88 | 17 | 1 |
+| V4 Pro / **anchored-standard** Win | 99 | 165 | **0** | 98 | 18 | 1 |
+| V4 Pro / **Standard** WSL | 91 | 11 | **208** | 2 | 137 | 55 |
+| V4 Pro / **PTC** WSL | 92 | 16 | **194** | 0 | 237 | 33 |
+
+High-scoring runs (96–99) carry `we`/`let's` with `let me ≈ 0`; low-scoring
+runs (91–92) carry `let me` in the hundreds. That clean separation is the
+source of the 🟢 高效 / 🟠 犹豫 split.
+
+**The classifier.** The repo ships the exact lexical rules
+([`evaluator/trigger_probe/src/classifier.mjs`](https://github.com/xiaobright/modeltest/blob/main/evaluator/trigger_probe/src/classifier.mjs))
+that NoLetMe mirrors: first-line `We need` → minimal-like; `we` present with no
+`let me` → +2; any `let me` → standard-like; standalone `Good.`/`Great.`/
+`Excellent.` first line → +1. The ⚪ 中性 category covers the remaining
+`ambiguous`/reflective frame — the Standard-catalog opening `The user wants …
+Let me …` recorded in
+[`docs/v4.1/DEEPSEEK_V4_TRIGGER_MECHANISM_EXPERIMENTS_20260814.md`](https://github.com/xiaobright/modeltest/blob/main/docs/v4.1/DEEPSEEK_V4_TRIGGER_MECHANISM_EXPERIMENTS_20260814.md),
+plus general task-description vocabulary.
+
+**Honest limits.** The matrix warns verbatim: *"Lexical trajectory labels are
+observational fingerprints, not route or identity labels."* Word counts
+fingerprint a reasoning *style*; they do not identify a backend, a route, or a
+checkpoint, and V4 Flash shifts style without a score change. NoLetMe is a
+reasoning-style diagnostic, not a model identity test.
+
+Full event write-up: [`docs/research.md`](docs/research.md).
 
 ## Install
 
@@ -61,23 +97,21 @@ allowBuilds:
 
 then re-run the `add`.
 
-### Development overlay (no install)
+### Development (local source)
 
-Build once, then run with a patch overlay that points at the package:
+Rebuild after editing, then point the patch at the package:
 
 ```sh
 pnpm install && pnpm build
 dsh web --patch 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe/cordis.patch.yml'
 ```
 
-For a raw source overlay the row in `cordis.patch.yml` can name the package
-directory directly:
-
-```yaml
-- insert:
-    - id: noletme
-      name: 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe'
-```
+> **Windows note.** The `cordis.patch.yml` row uses the package name
+> (`dsh-noletme`), so the overlay works only when the package is installed
+> into the profile (the `dsh plugin --profile web add ./NoLetMe` step above).
+> Naming the row with a raw absolute Windows path fails — the ESM loader
+> rejects `D:\…` entry names (`ERR_UNSUPPORTED_ESM_URL_SCHEME`). On Linux a
+> `file://` URL works as an alternative.
 
 ## Build
 
@@ -95,12 +129,18 @@ modules resolve through the frozen module table, everything else inlines, and
 ## Usage
 
 - The panel sits **top-right**, floating over the conversation frame.
-- **Expanded** card: live status strip (streaming dot, reasoning blocks /
-  chars, visible replies), trajectory-mode badge, per-category share bars,
-  raw research metrics (`we · let's · let me · I`), the keyword breakdown, and
-  a hesitation-pressure health note.
-- Click the header chevron to **collapse** into a small mode pill (state is
-  remembered). Click the pill to expand again.
+- **Collapsed** it is a small mode pill (dot + "NoLetMe" + current mode);
+  click it to expand into the rounded card. **Expanded** it shows the live
+  status strip (streaming dot, reasoning blocks / chars, visible replies),
+  the trajectory-mode badge, per-category share bars, raw research metrics
+  (`we · let's · let me · I`), the keyword breakdown, and a hesitation-pressure
+  health note.
+- The pill↔card transition is a single surface that morphs on a
+  critically-damped spring (interruptible, anchored at the right dock), and
+  degrades to an instant cross-fade under `prefers-reduced-motion`. The open
+  state is remembered.
+- The panel body's scrollbar is hover-revealed through the harness's own
+  `--dsh-scrollbar-*` tokens (invisible until hovered).
 - Stats are per-session and reset when you switch sessions. No data leaves
   your browser.
 
