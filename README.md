@@ -145,6 +145,11 @@ modules resolve through the frozen module table, everything else inlines, and
 
 ### Data freshness, persistence, and privacy
 
+- **Reasoning-only, like the evidence**: the keyword trajectory is counted over
+  **reasoning blocks only** — the exact scope of `analyze_trajectory_exports.py`.
+  If a model streams its output as visible text with little or no reasoning,
+  the panel shows a **reasoning-health alert** (with the raw reasoning/text
+  totals) instead of fabricating counts from the text.
 - **Real-time**: stats fold incrementally on every streamed reasoning delta
   (at most once per animation frame) — nothing re-walks the conversation.
 - **Session switching**: switching conversations immediately repaints the new

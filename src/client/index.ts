@@ -9,9 +9,11 @@ export type { PersistedSessionStats } from './accumulator.ts'
 export { createStatsStore } from './session-store.ts'
 export type { StatsSnapshot, StatsStorage } from './session-store.ts'
 export {
-  computeStats, countBlock, countReasoningText, emptySessionCounts, foldBlock, formatCount, toTrajectoryStats,
+  anomalyOf, computeStats, countBlock, countReasoningText, emptySessionCounts, foldBlock, formatCount, toTrajectoryStats,
 } from './stats.ts'
-export type { BlockCounts, PatternCounts, SessionCounts, TrajectoryStats, WordCounts } from './stats.ts'
+export type {
+  BlockCounts, PatternCounts, ReasoningAnomaly, SessionCounts, TrajectoryStats, WordCounts,
+} from './stats.ts'
 export {
   EFFICIENT_PATTERNS, GROUPS, HESITANT_PATTERNS, NEUTRAL_PATTERNS, PATTERNS,
 } from './keywords.ts'

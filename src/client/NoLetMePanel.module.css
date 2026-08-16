@@ -207,6 +207,65 @@
   50% { opacity: 0.45; transform: scale(0.72); }
 }
 
+/* --- reasoning-health alert --- */
+
+.alert {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  margin-bottom: 12px;
+}
+
+.alertIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-inverted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.alertBody {
+  min-width: 0;
+}
+
+.alertTitle {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.alertFacts {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.alertSep {
+  color: var(--dsw-alias-separator-primary);
+  margin: 0 6px;
+}
+
+.alertHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* --- trajectory mode (label + badge on one row) + share bars --- */
 
 .section {

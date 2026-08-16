@@ -30,6 +30,9 @@ export interface PersistedSessionStats {
   maxSeq: number
   lastCompactionSeq: number
   counts: SessionCounts
+  /** Visible-text diagnostic totals (never word-counted). */
+  textBlocks: number
+  textChars: number
 }
 
 /** One session's live accumulator. */
@@ -37,7 +40,11 @@ export class SessionStatsAccumulator {
   private minSeq = Number.POSITIVE_INFINITY
   private maxSeq = Number.NEGATIVE_INFINITY
   private lastCompactionSeq = 0
+  /** Folded reasoning counts (the only surface word-counted). */
   readonly counts: SessionCounts = emptySessionCounts()
+  /** Visible-text diagnostic totals — block count + characters only. */
+  private textBlocks = 0
+  private textChars = 0
 
   /**
    * Fold a snapshot into the accumulator. Detects compaction and only counts
@@ -79,10 +86,18 @@ export class SessionStatsAccumulator {
       chars: this.counts.chars,
       replies: this.counts.replies,
     }
+    let textBlocks = this.textBlocks
+    let textChars = this.textChars
     if (snapshot.partial !== null) {
-      for (const block of snapshot.partial.blocks) foldBlock(live, block)
+      for (const block of snapshot.partial.blocks) {
+        if (block.kind === 'reasoning') foldBlock(live, block)
+        else if (block.kind === 'text') {
+          textBlocks += 1
+          textChars += block.text.length
+        }
+      }
     }
-    return toTrajectoryStats(live, snapshot.partial !== null)
+    return toTrajectoryStats(live, snapshot.partial !== null, { textBlocks, textChars })
   }
 
   /** Whether the accumulator carries any folded data (drives cache reuse). */
@@ -104,6 +119,8 @@ export class SessionStatsAccumulator {
         chars: this.counts.chars,
         replies: this.counts.replies,
       },
+      textBlocks: this.textBlocks,
+      textChars: this.textChars,
     }
   }
 
@@ -121,6 +138,8 @@ export class SessionStatsAccumulator {
     acc.counts.blocks = Number.isFinite(counts.blocks) ? counts.blocks : 0
     acc.counts.chars = Number.isFinite(counts.chars) ? counts.chars : 0
     acc.counts.replies = Number.isFinite(counts.replies) ? counts.replies : 0
+    acc.textBlocks = typeof raw.textBlocks === 'number' ? raw.textBlocks : 0
+    acc.textChars = typeof raw.textChars === 'number' ? raw.textChars : 0
     if (Array.isArray(counts.patterns)) {
       for (let i = 0; i < acc.counts.patterns.length; i++) {
         const value = counts.patterns[i]
@@ -139,7 +158,13 @@ export class SessionStatsAccumulator {
 
   private foldNode(node: AssistantMessageNode): void {
     this.counts.replies += 1
-    for (const block of node.blocks) foldBlock(this.counts, block)
+    for (const block of node.blocks) {
+      if (block.kind === 'reasoning') foldBlock(this.counts, block)
+      else if (block.kind === 'text') {
+        this.textBlocks += 1
+        this.textChars += block.text.length
+      }
+    }
     if (node.seq < this.minSeq) this.minSeq = node.seq
     if (node.seq > this.maxSeq) this.maxSeq = node.seq
   }
@@ -156,5 +181,7 @@ export class SessionStatsAccumulator {
     this.counts.blocks = 0
     this.counts.chars = 0
     this.counts.replies = 0
+    this.textBlocks = 0
+    this.textChars = 0
   }
 }

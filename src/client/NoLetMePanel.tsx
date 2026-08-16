@@ -281,9 +281,15 @@ function PanelCard({
         ) : (
           <>
             <StatusRow stats={stats} loading={loading} t={t} />
-            <ModeSection stats={stats} t={t} />
-            <PatternSection stats={stats} t={t} />
-            <Footer stats={stats} t={t} />
+            {stats.anomaly !== 'none' ? (
+              <ReasoningAlert stats={stats} t={t} />
+            ) : (
+              <>
+                <ModeSection stats={stats} t={t} />
+                <PatternSection stats={stats} t={t} />
+                <Footer stats={stats} t={t} />
+              </>
+            )}
           </>
         )}
       </div>
@@ -315,6 +321,25 @@ function StatusRow({ stats, loading, t }: {
         {t('panel.replies')}
         <b className={css.value}>{stats.replies}</b>
       </span>
+    </div>
+  )
+}
+
+/** Reasoning-health alert: the model streamed output as text with no (or almost no) reasoning blocks. */
+function ReasoningAlert({ stats, t }: { stats: TrajectoryStats; t: NoLetMePanelProps['t'] }) {
+  const missing = stats.anomaly === 'missing'
+  return (
+    <div className={css.alert} role="alert">
+      <span className={css.alertIcon} aria-hidden="true">!</span>
+      <div className={css.alertBody}>
+        <p className={css.alertTitle}>{missing ? t('panel.reasoningMissing') : t('panel.reasoningLow')}</p>
+        <p className={css.alertFacts}>
+          {t('panel.reasoningBlocks')} {stats.blocks} · {t('panel.reasoningChars')} {formatCount(stats.chars)}
+          <span className={css.alertSep}>/</span>
+          {t('panel.textBlocks')} {stats.textBlocks} · {t('panel.textChars')} {formatCount(stats.textChars)}
+        </p>
+        <p className={css.alertHint}>{t('panel.reasoningAlertHint')}</p>
+      </div>
     </div>
   )
 }

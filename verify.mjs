@@ -188,6 +188,50 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('accumulator: durable lets unchanged by toStats', acc.counts.words.lets, 0)
 }
 
+// --- 9. Reasoning-health anomaly: text-without-reasoning is reported, never counted ---
+{
+  const { computeStats } = await import('./src/client/stats.ts')
+  const textNode = {
+    kind: 'assistant', seq: 1, time: 0, turn: 1, step: 1,
+    blocks: [{ kind: 'text', text: 'Let me think about the build. The user wants a fix. We need to check logs.' }],
+  }
+  const reasoningNode = {
+    kind: 'assistant', seq: 1, time: 0, turn: 1, step: 1,
+    blocks: [
+      { kind: 'reasoning', text: 'We need to inspect the pipeline. Let\'s run the tests.' },
+      { kind: 'text', text: 'Here is the fix.' },
+    ],
+  }
+  const snap = (nodes, partial = null) => ({ sessionId: 's1', nodes, partial })
+
+  // All text, no reasoning → missing anomaly; text is never word-counted.
+  const missing = computeStats(snap([textNode]))
+  check('anomaly: all-text → missing', missing.anomaly, 'missing')
+  check('anomaly: missing leaves blocks 0', missing.blocks, 0)
+  check('anomaly: missing tracks text chars', missing.textBlocks, 1)
+  check('anomaly: text words not counted (we 0)', missing.words.we, 0)
+
+  // Reasoning + normal short reply → none.
+  const normal = computeStats(snap([reasoningNode]))
+  check('anomaly: reasoning+short-text → none', normal.anomaly, 'none')
+  check('anomaly: reasoning words counted', normal.words.we, 1)
+  check('anomaly: textBlocks diagnostic still tracked', normal.textBlocks, 1)
+
+  // Reasoning starved vs a huge text block → low anomaly.
+  const starved = computeStats(snap([{
+    kind: 'assistant', seq: 1, time: 0, turn: 1, step: 1,
+    blocks: [
+      { kind: 'reasoning', text: 'ok' },
+      { kind: 'text', text: 'Let me dump the entire answer here.'.repeat(80) },
+    ],
+  }]))
+  check('anomaly: reasoning:text ratio < 5% → low', starved.anomaly, 'low')
+
+  // No output at all → none (nothing to diagnose).
+  const bare = computeStats(snap([{ kind: 'assistant', seq: 1, time: 0, turn: 1, step: 1, blocks: [] }]))
+  check('anomaly: empty assistant → none', bare.anomaly, 'none')
+}
+
 console.log(failures === 0 ? '\nAll checks passed ✓' : `\n${failures} check(s) FAILED ✗`)
 // Let pending dynamic-import module jobs settle before exiting (avoids a
 // Windows libuv teardown race that otherwise asserts in win/async.c).

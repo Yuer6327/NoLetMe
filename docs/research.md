@@ -97,3 +97,19 @@ explicitly warn that a single `We`/`Good`/`Let me` does not identify a backend,
 a route, or a checkpoint, and Flash shifts style without a score change. The
 panel is a diagnostic mirror of the agent's current reasoning style, not a
 model identity test.
+
+## Counting scope: reasoning blocks only
+
+`evaluator/trajectory_evidence/analyze_trajectory_exports.py` counts the
+keyword metrics (`we`, `let me`, `let's`, `i`) over **`reasoning` blocks
+only**; `text` blocks contribute only `visible_blocks`/`visible_chars`
+(block count and character length). NoLetMe mirrors that exactly — the
+keyword breakdown, mode, and health figures come from reasoning blocks
+alone.
+
+Because some models stream their entire output as visible text with no
+reasoning blocks, NoLetMe also tracks the text totals as a **diagnostic**:
+when a conversation carries visible text but zero (or under ~5% of the
+output as) reasoning, the panel shows a reasoning-health alert and reports
+the raw counts instead of fabricating a trajectory from the text. The
+keyword stats are never computed over text.
