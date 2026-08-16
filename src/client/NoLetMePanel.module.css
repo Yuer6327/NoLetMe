@@ -1,0 +1,368 @@
+/* NoLetMe reasoning-trajectory panel.
+   Floating card docked top-right over the shell.overlay layer. Token-only
+   styling mirroring DetailsPanel.module.css (--dsw-alias-* semantic aliases,
+   theme shadows/fonts); light/dark flips ride the theme owner, no selectors
+   here. Collapsed = a compact mode pill. */
+
+.root {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 40; /* above the overlay layer's own stacking of sibling entries */
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  max-height: min(70vh, calc(100vh - 32px));
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  pointer-events: auto;
+}
+
+/* Collapsed: only the pill button remains — drop the card frame. */
+.root[data-open='false'] {
+  width: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* --- header (figma RightSidebar frame, as DetailsPanel) --- */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.title {
+  overflow: hidden;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.toggle:focus-visible,
+.pill:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px;
+  overflow-y: auto;
+}
+
+.empty {
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* --- live status strip --- */
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.statusItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.value {
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.liveDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.root[data-streaming] .liveDot {
+  animation: noletme-pulse 1.2s var(--ds-ease-in-out) infinite;
+}
+
+@keyframes noletme-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.72); }
+}
+
+/* --- trajectory mode + share bars --- */
+
+.section {
+  margin-bottom: 14px;
+}
+
+.sectionLabel {
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modeBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.modeBadge[data-mode='efficient'] {
+  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-secondary);
+}
+
+.modeBadge[data-mode='hesitant'] {
+  color: var(--dsw-alias-state-warn-primary);
+  background: var(--dsw-alias-state-warn-secondary);
+}
+
+.modeBadge[data-mode='neutral'] {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.barLabel {
+  flex: none;
+  width: 44px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.barTrack {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width var(--ds-transition-duration) var(--ds-ease-in-out);
+}
+
+.barValue {
+  flex: none;
+  width: 44px;
+  text-align: right;
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- raw research metrics + keyword breakdown --- */
+
+.metrics {
+  display: flex;
+  gap: 10px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+}
+
+.metricValue {
+  color: var(--dsw-alias-label-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.patternList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.patternItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.patternDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+}
+
+.patternKey {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.patternCount {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- footer --- */
+
+.footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.healthRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.healthValue {
+  font-weight: 500;
+}
+
+.healthValue[data-health='low'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.healthValue[data-health='mid'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.healthValue[data-health='high'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* --- collapsed pill --- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-overlay);
+  box-shadow: var(--dsw-shadow-lv2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+}
+
+.pill:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.pillDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+.pillDot[data-mode='efficient'] {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.pillDot[data-mode='hesitant'] {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.pillDot[data-mode='neutral'] {
+  background: var(--dsw-alias-label-secondary);
+}
+
+.pillMode {
+  color: var(--dsw-alias-label-secondary);
+  font-weight: 400;
+}
+
+/* Reduced motion: no pulse, no width tween. */
+@media (prefers-reduced-motion: reduce) {
+  .root[data-streaming] .liveDot {
+    animation: none;
+  }
+
+  .barFill {
+    transition: none;
+  }
+}

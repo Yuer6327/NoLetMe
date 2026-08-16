@@ -1,0 +1,15 @@
+# NoLetMe bundle layer: add the NoLetMe web panel to the dsh composition.
+#
+# When installed as a bundle (`dsh plugin --profile <name> add ./NoLetMe`), the
+# loader resolves `dsh-noletme` from the profile's node_modules. For a raw
+# dev overlay instead, point the row at the absolute package directory:
+#
+#   - insert:
+#       - id: noletme
+#         name: 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe'
+#
+# and launch with `dsh web --patch ./cordis.patch.yml`.
+
+- insert:
+    - id: noletme
+      name: dsh-noletme
