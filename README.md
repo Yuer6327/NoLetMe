@@ -42,7 +42,7 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 ## 安装
 
-**前置条件**：已安装 dsh CLI（`dsh --version`），并已建好目标 profile。
+**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 的浏览器包按 0.1.0-rc.7 的客户端包构建与验证；更早的 rc 版本未保证兼容。
 
 **方式一 · 本地目录安装**
 
@@ -100,6 +100,12 @@ pnpm install      # devDependencies：tsdown、lightningcss、typescript、react
 pnpm typecheck    # 可选；tsc --noEmit
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/client.js（浏览器包）
 ```
+
+客户端依赖（`@deepseek-ai/dsh-client-*`）与 dsh CLI 内置的客户端包版本对齐，固定 `^0.1.0-rc.7`。
+
+> ⚠️ 这些包在 npm 的 `latest` 标签是**过期**的 `0.0.1-rc.1`，真实最新版走 `next`（= `0.1.0-rc.7`）。升级依赖时请显式写 `^0.1.0-rc.7`，**不要用 `@latest`**。
+
+> dsh CLI 升级后无需重装 profile：基底包（`dsh-base`、`dsh-web-app` 等）按"安装优先"从 CLI 自身解析，profile 里的行会自动跟到新版本。
 
 浏览器包是 `window.__ModuleLoader__.load(...)` 闭包工厂产物（与 harness 自带的 `clientBundle` 预设同形）：平台模块走冻结模块表解析，其余内联，`*.module.css` 编译成哈希类名映射并自动注入样式。
 
