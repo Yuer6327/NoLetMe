@@ -21,7 +21,7 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 **实测数据**：`evaluator/trajectory_evidence/derived/trajectory_stats.json`（每次运行做 SHA-256 固定；只统计已完成的助手推理块，排除流式分块）：
 
 | 运行（模型 / 配置） | 得分 | `we` | `let me` | `let's` | `I` | 可见回复 |
-|---|---|---:|---:|---:|---:|---:|---:|
+|---|---:|---:|---:|---:|---:|---:|
 | V4 Pro / **Minimal** WSL | 99 | 272 | **0** | 101 | 17 | 1 |
 | V4 Pro / **Minimal** WSL | 96 | 231 | **0** | 117 | 18 | 1 |
 | V4 Pro / **anchored-standard** Win | 98 | 179 | **1** | 88 | 17 | 1 |
