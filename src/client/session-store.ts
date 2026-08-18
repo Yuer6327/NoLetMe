@@ -87,6 +87,7 @@ export function createStatsStore(
   let historyState: HistoryState = 'idle'
   let historyPages = 0
   let historyError: StatsSnapshot['historyError']
+  let historySyncRunning = false
   let lastSnap: ConversationSnapshot | undefined
   let loadGen = 0
   let persistTimer: ReturnType<typeof setTimeout> | undefined
@@ -170,23 +171,24 @@ export function createStatsStore(
 
   /** Page the complete history of a just-focused session into the snapshot. */
   const syncFullHistory = async (sessionId: SessionId, session: SessionFace, gen: number): Promise<void> => {
+    if (historySyncRunning) return
+    historySyncRunning = true
     loading = true
     historyState = 'syncing'
-    historyPages = 0
     historyError = undefined
     publish()
-    let pages = 0
+    let pages = historyPages
     let failed = false
-    let blocked = false
+    let waitingForOpen = false
     try {
       while (pages < MAX_HISTORY_PAGES && gen === loadGen) {
         if (sessions.list.getSnapshot().current !== sessionId) {
-          blocked = true
+          waitingForOpen = true
           break
         }
         const snap = live.getSnapshot()
         if (snap === undefined || snap.sessionId !== sessionId) {
-          blocked = true
+          waitingForOpen = true
           break
         }
         if (snap.openState === 'error') {
@@ -194,7 +196,10 @@ export function createStatsStore(
           break
         }
         if (snap.openState !== 'open' || snap.loadingOlder) {
-          blocked = true
+          // A selected rc7 session can be cold/loading while the host opens it.
+          // Keep the state syncing and retry when the session publishes again;
+          // never turn this transient state into a false `limited` result.
+          waitingForOpen = true
           break
         }
         if (!snap.hasMore) break
@@ -210,13 +215,22 @@ export function createStatsStore(
     }
     if (gen !== loadGen) return // user switched away; a newer sync owns the state
 
+    historySyncRunning = false
     const finalSnap = live.getSnapshot()
     const stillHasMore = finalSnap?.sessionId === sessionId && finalSnap.hasMore === true
+    if (waitingForOpen) {
+      // Remain visibly syncing. onLive will retry once the same session changes
+      // from cold/loading to open (or finishes an external older-page request).
+      loading = true
+      historyState = 'syncing'
+      publish()
+      return
+    }
     loading = false
     if (failed || finalSnap?.openState === 'error') {
       historyState = 'error'
       historyError = 'load-failed'
-    } else if (blocked || stillHasMore) {
+    } else if (stillHasMore) {
       // Do not present an unavailable or page-capped result as complete.
       historyState = 'limited'
     } else {
@@ -246,6 +260,7 @@ export function createStatsStore(
     const session = sessions.binding(sessionId)?.session
     if (session !== undefined) void syncFullHistory(sessionId, session, gen)
     else {
+      historySyncRunning = false
       loading = false
       historyState = 'error'
       historyError = 'session-unavailable'
@@ -260,6 +275,7 @@ export function createStatsStore(
       currentId = undefined
       acc = new SessionStatsAccumulator()
       loading = false
+      historySyncRunning = false
       historyState = 'idle'
       historyPages = 0
       historyError = undefined
@@ -267,6 +283,11 @@ export function createStatsStore(
       return
     }
     if (snap.sessionId !== currentId) switchTo(snap.sessionId)
+    else if (historyState === 'syncing' && !historySyncRunning) {
+      // A cold/loading session will ask us to retry after its next snapshot.
+      const session = sessions.binding(snap.sessionId)?.session
+      if (session !== undefined) void syncFullHistory(snap.sessionId, session, loadGen)
+    }
     const changed = acc.fold(snap)
     if (changed) schedulePersist()
     publish()

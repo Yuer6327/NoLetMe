@@ -276,6 +276,26 @@ The user is asking for a quick fix. I think the issue is in the config.
   const completeStore = createStatsStore(completeSessions, undefined)
   check('history with no older pages is complete', completeStore.getSnapshot().historyState, 'complete')
 
+  let coldHistory = { sessionId: 'cold', nodes: [], partial: null, openState: 'cold', hasMore: false, loadingOlder: false }
+  const coldListeners = new Set()
+  const coldSession = {
+    getSnapshot: () => coldHistory,
+    subscribe: fn => { coldListeners.add(fn); return () => coldListeners.delete(fn) },
+    loadOlder: async () => {},
+  }
+  const coldSessions = {
+    list: {
+      getSnapshot: () => ({ current: 'cold' }),
+      subscribe: fn => { coldListeners.add(fn); return () => coldListeners.delete(fn) },
+    },
+    binding: id => id === 'cold' ? { session: coldSession } : undefined,
+  }
+  const coldStore = createStatsStore(coldSessions, undefined)
+  check('cold history stays syncing', coldStore.getSnapshot().historyState, 'syncing')
+  coldHistory = { ...coldHistory, openState: 'open' }
+  for (const fn of [...coldListeners]) fn()
+  check('cold history retries after open', coldStore.getSnapshot().historyState, 'complete')
+
   const legacyStorageData = new Map([
     ['dsh-noletme.stats.complete', JSON.stringify({
       v: 1,
