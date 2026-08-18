@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatCount, type TrajectoryStats } from './stats.ts'
 import { GROUPS, PATTERNS, type Group, type Mode } from './keywords.ts'
+import type { HistoryState } from './session-store.ts'
 import type { NoLetMePanelProps } from './slots.ts'
 import css from './NoLetMePanel.module.css'
 
@@ -238,7 +239,15 @@ export function NoLetMePanel({ useStats, t }: NoLetMePanelProps) {
           pointerEvents: morph.o > 0.5 ? 'auto' : 'none',
         }}
       >
-        <PanelCard open={open} onToggle={toggle} t={t} stats={stats} loading={snap.loading} />
+        <PanelCard
+          open={open}
+          onToggle={toggle}
+          t={t}
+          stats={stats}
+          loading={snap.loading}
+          historyState={snap.historyState}
+          historyPages={snap.historyPages}
+        />
       </div>
     </div>
   )
@@ -251,12 +260,16 @@ function PanelCard({
   t,
   stats,
   loading,
+  historyState,
+  historyPages,
 }: {
   open: boolean
   onToggle: () => void
   t: NoLetMePanelProps['t']
   stats: TrajectoryStats | null
   loading: boolean
+  historyState: HistoryState
+  historyPages: number
 }) {
   return (
     <>
@@ -280,7 +293,10 @@ function PanelCard({
           <p className={css.empty}>{t('panel.noSession')}</p>
         ) : (
           <>
-            <StatusRow stats={stats} loading={loading} t={t} />
+            <StatusRow stats={stats} loading={loading} historyState={historyState} t={t} />
+            {(historyState === 'limited' || historyState === 'error') && (
+              <HistoryNotice state={historyState} pages={historyPages} t={t} />
+            )}
             {stats.anomaly !== 'none' ? (
               <ReasoningAlert stats={stats} t={t} />
             ) : (
@@ -298,16 +314,24 @@ function PanelCard({
 }
 
 /** Live status strip: streaming dot, sync state, reasoning block / char counts, replies. */
-function StatusRow({ stats, loading, t }: {
+function StatusRow({ stats, loading, historyState, t }: {
   stats: NonNullable<TrajectoryStats>
   loading: boolean
+  historyState: HistoryState
   t: NoLetMePanelProps['t']
 }) {
+  const syncLabel = historyState === 'syncing'
+    ? t('panel.syncing')
+    : historyState === 'limited'
+      ? t('panel.historyLimited')
+      : historyState === 'error'
+        ? t('panel.historyError')
+        : stats.streaming ? t('panel.streaming') : t('panel.idle')
   return (
     <div className={css.status}>
       <span className={css.statusItem}>
         <span className={css.liveDot} data-syncing={loading || undefined} aria-hidden="true" />
-        {loading ? t('panel.syncing') : stats.streaming ? t('panel.streaming') : t('panel.idle')}
+        {syncLabel}
       </span>
       <span className={css.statusItem}>
         {t('panel.reasoningBlocks')}
@@ -321,6 +345,30 @@ function StatusRow({ stats, loading, t }: {
         {t('panel.replies')}
         <b className={css.value}>{stats.replies}</b>
       </span>
+    </div>
+  )
+}
+
+/** Warn when the panel is showing a partial or failed history sync. */
+function HistoryNotice({
+  state,
+  pages,
+  t,
+}: {
+  state: Extract<HistoryState, 'limited' | 'error'>
+  pages: number
+  t: NoLetMePanelProps['t']
+}) {
+  const limited = state === 'limited'
+  return (
+    <div className={css.alert} role="status">
+      <span className={css.alertIcon} aria-hidden="true">!</span>
+      <div className={css.alertBody}>
+        <p className={css.alertTitle}>{limited ? t('panel.historyLimited') : t('panel.historyError')}</p>
+        <p className={css.alertFacts}>
+          {limited ? `${t('panel.historyLimitedHint')} (${pages} pages)` : t('panel.historyErrorHint')}
+        </p>
+      </div>
     </div>
   )
 }

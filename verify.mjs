@@ -174,9 +174,14 @@ The user is asking for a quick fix. I think the issue is in the config.
   // Persist → load round-trip preserves counts and the high-water mark.
   const persisted = acc.persist()
   const reloaded = SessionStatsAccumulator.load(persisted)
+  check('accumulator: persistence schema version', persisted.v, 2)
+  check('accumulator: persistence taxonomy version', persisted.taxonomyVersion, 1)
+  check('accumulator: persistence classifier version', persisted.classifierVersion, 1)
   check('accumulator: reload replies', reloaded.counts.replies, 1)
   check('accumulator: reload we', reloaded.counts.words.we, 1)
   check('accumulator: reload keeps fold-idempotence', reloaded.fold(compSnap), false)
+  check('accumulator: taxonomy mismatch → fresh', SessionStatsAccumulator.load({ ...persisted, taxonomyVersion: 999 }).counts.replies, 0)
+  check('accumulator: classifier mismatch → fresh', SessionStatsAccumulator.load({ ...persisted, classifierVersion: 999 }).counts.replies, 0)
   check('accumulator: load garbage → fresh', SessionStatsAccumulator.load('nonsense').counts.replies, 0)
 
   // toStats folds live partial on top without mutating durable counts.
@@ -188,7 +193,88 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('accumulator: durable lets unchanged by toStats', acc.counts.words.lets, 0)
 }
 
-// --- 9. Reasoning-health anomaly: text-without-reasoning is reported, never counted ---
+// --- 9. Live snapshots refresh before notifying subscribers; history state is explicit ---
+{
+  const { createLiveConversation } = await import('./src/client/session-source.ts')
+  let current = {
+    sessionId: 'live', nodes: [], partial: null,
+  }
+  const sessionListeners = new Set()
+  const listListeners = new Set()
+  const session = {
+    getSnapshot: () => current,
+    subscribe: fn => { sessionListeners.add(fn); return () => sessionListeners.delete(fn) },
+    loadOlder: async () => {},
+  }
+  const sessions = {
+    list: {
+      getSnapshot: () => ({ current: 'live' }),
+      subscribe: fn => { listListeners.add(fn); return () => listListeners.delete(fn) },
+    },
+    binding: id => id === 'live' ? { session } : undefined,
+  }
+  const live = createLiveConversation(sessions)
+  let notifications = 0
+  live.subscribe(() => { notifications += 1 })
+  current = {
+    ...current,
+    nodes: [{ kind: 'assistant', seq: 1, time: 0, turn: 1, step: 1, blocks: [{ kind: 'reasoning', text: 'We need the fresh snapshot.' }] }],
+  }
+  for (const fn of [...sessionListeners]) fn()
+  check('live observable refreshes snapshot before notify', live.getSnapshot().nodes[0].blocks[0].text, 'We need the fresh snapshot.')
+  check('live observable notifies subscribers', notifications > 0, true)
+
+  const { createStatsStore } = await import('./src/client/session-store.ts')
+  let pagesLoaded = 0
+  let history = { sessionId: 'history', nodes: [], partial: null, openState: 'open', hasMore: true, loadingOlder: false }
+  const historyListeners = new Set()
+  const historySession = {
+    getSnapshot: () => history,
+    subscribe: fn => { historyListeners.add(fn); return () => historyListeners.delete(fn) },
+    loadOlder: async () => {
+      pagesLoaded += 1
+      history = { ...history, hasMore: pagesLoaded < 31 }
+      for (const fn of [...historyListeners]) fn()
+    },
+  }
+  const historySessions = {
+    list: {
+      getSnapshot: () => ({ current: 'history' }),
+      subscribe: fn => { historyListeners.add(fn); return () => historyListeners.delete(fn) },
+    },
+    binding: id => id === 'history' ? { session: historySession } : undefined,
+  }
+  // Keep list and session subscriptions separate in the mock: the real runtime
+  // exposes distinct observables for selection and conversation snapshots.
+  const listOnlyListeners = new Set()
+  historySessions.list.subscribe = fn => { listOnlyListeners.add(fn); return () => listOnlyListeners.delete(fn) }
+  const store = createStatsStore(historySessions, undefined)
+  for (let attempt = 0; attempt < 200 && store.getSnapshot().historyState === 'syncing'; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  check('history cap is never reported complete', store.getSnapshot().historyState, 'limited')
+  check('history cap records loaded pages', store.getSnapshot().historyPages, 30)
+  check('history cap exposes loading bound', store.getSnapshot().historyLimit, 30)
+
+  const completeHistory = { sessionId: 'complete', nodes: [], partial: null, openState: 'open', hasMore: false, loadingOlder: false }
+  const completeListeners = new Set()
+  const completeSession = {
+    getSnapshot: () => completeHistory,
+    subscribe: fn => { completeListeners.add(fn); return () => completeListeners.delete(fn) },
+    loadOlder: async () => {},
+  }
+  const completeSessions = {
+    list: {
+      getSnapshot: () => ({ current: 'complete' }),
+      subscribe: fn => { completeListeners.add(fn); return () => completeListeners.delete(fn) },
+    },
+    binding: id => id === 'complete' ? { session: completeSession } : undefined,
+  }
+  const completeStore = createStatsStore(completeSessions, undefined)
+  check('history with no older pages is complete', completeStore.getSnapshot().historyState, 'complete')
+}
+
+// --- 10. Reasoning-health anomaly: text-without-reasoning is reported, never counted ---
 {
   const { computeStats } = await import('./src/client/stats.ts')
   const textNode = {

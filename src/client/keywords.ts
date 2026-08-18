@@ -34,6 +34,9 @@
 
 import type { NoLetMeKey } from './locales.ts'
 
+/** Version of the keyword taxonomy used by persisted and exported evidence. */
+export const KEYWORD_TAXONOMY_VERSION = 1 as const
+
 /** Reasoning-trajectory category. */
 export type Mode = 'efficient' | 'hesitant' | 'neutral'
 

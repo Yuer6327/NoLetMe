@@ -19,13 +19,19 @@ import type {
   AssistantMessageNode, ConversationSnapshot,
 } from '@deepseek-ai/dsh-client-runtime/client'
 import {
-  emptySessionCounts, foldBlock, toTrajectoryStats,
+  CLASSIFIER_VERSION, emptySessionCounts, foldBlock, toTrajectoryStats,
   type SessionCounts, type TrajectoryStats,
 } from './stats.ts'
+import { KEYWORD_TAXONOMY_VERSION } from './keywords.ts'
+
+/** Version of the persisted accumulator schema. */
+export const PERSISTENCE_VERSION = 2 as const
 
 /** Serialized form persisted to localStorage. */
 export interface PersistedSessionStats {
-  v: 1
+  v: typeof PERSISTENCE_VERSION
+  taxonomyVersion: typeof KEYWORD_TAXONOMY_VERSION
+  classifierVersion: typeof CLASSIFIER_VERSION
   minSeq: number
   maxSeq: number
   lastCompactionSeq: number
@@ -108,7 +114,9 @@ export class SessionStatsAccumulator {
   /** Serialize for durable storage. */
   persist(): PersistedSessionStats {
     return {
-      v: 1,
+      v: PERSISTENCE_VERSION,
+      taxonomyVersion: KEYWORD_TAXONOMY_VERSION,
+      classifierVersion: CLASSIFIER_VERSION,
       minSeq: this.minSeq === Number.POSITIVE_INFINITY ? 0 : this.minSeq,
       maxSeq: this.maxSeq === Number.NEGATIVE_INFINITY ? -1 : this.maxSeq,
       lastCompactionSeq: this.lastCompactionSeq,
@@ -129,7 +137,9 @@ export class SessionStatsAccumulator {
     const acc = new SessionStatsAccumulator()
     if (typeof data !== 'object' || data === null) return acc
     const raw = data as Partial<PersistedSessionStats>
-    if (raw.v !== 1) return acc
+    if (raw.v !== PERSISTENCE_VERSION) return acc
+    if (raw.taxonomyVersion !== KEYWORD_TAXONOMY_VERSION) return acc
+    if (raw.classifierVersion !== CLASSIFIER_VERSION) return acc
     const counts = raw.counts
     if (typeof counts !== 'object' || counts === null) return acc
     acc.minSeq = typeof raw.minSeq === 'number' ? raw.minSeq : 0

@@ -51,7 +51,13 @@ export function createLiveConversation(
       return
     }
     snapshot = session.getSnapshot()
-    unsubSession = session.subscribe(notify)
+    unsubSession = session.subscribe(() => {
+      // SessionFace publishes a notification rather than passing the snapshot.
+      // Refresh the value before notifying consumers so streaming deltas are
+      // visible to the stats store instead of leaving it on the first snapshot.
+      snapshot = session.getSnapshot()
+      notify()
+    })
     notify() // selection moved: repaint now, before the new session publishes
   }
 

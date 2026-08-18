@@ -24,8 +24,11 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { createLiveConversation } from './session-source.ts'
-import { SessionStatsAccumulator } from './accumulator.ts'
+import { PERSISTENCE_VERSION, SessionStatsAccumulator } from './accumulator.ts'
 import type { TrajectoryStats } from './stats.ts'
+
+/** State of the full-history synchronization for the current session. */
+export type HistoryState = 'idle' | 'syncing' | 'complete' | 'limited' | 'error'
 
 /** What the panel renders at one instant. */
 export interface StatsSnapshot {
@@ -35,6 +38,14 @@ export interface StatsSnapshot {
   stats: TrajectoryStats | null
   /** True while the complete history is still being paged in. */
   loading: boolean
+  /** Explicit result of the full-history synchronization. */
+  historyState: HistoryState
+  /** Number of older pages loaded during the current synchronization. */
+  historyPages: number
+  /** Configured page cap, useful when explaining a `limited` result. */
+  historyLimit: number
+  /** Stable, non-sensitive error code when history loading fails. */
+  historyError?: 'load-failed' | 'session-unavailable'
 }
 
 /** Max `loadOlder` pages a full-history sync will pull (robustness bound). */
@@ -48,7 +59,7 @@ const MAX_CACHED_SESSIONS = 24
 export type StatsStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 function storageKey(sessionId: string): string {
-  return `dsh-noletme.stats.${sessionId}`
+  return `dsh-noletme.stats.v${PERSISTENCE_VERSION}.${sessionId}`
 }
 
 /**
@@ -68,10 +79,20 @@ export function createStatsStore(
   let currentId: SessionId | undefined
   let acc = new SessionStatsAccumulator()
   let loading = false
+  let historyState: HistoryState = 'idle'
+  let historyPages = 0
+  let historyError: StatsSnapshot['historyError']
   let lastSnap: ConversationSnapshot | undefined
   let loadGen = 0
   let persistTimer: ReturnType<typeof setTimeout> | undefined
-  let value: StatsSnapshot = { sessionId: undefined, stats: null, loading: false }
+  let value: StatsSnapshot = {
+    sessionId: undefined,
+    stats: null,
+    loading: false,
+    historyState: 'idle',
+    historyPages: 0,
+    historyLimit: MAX_HISTORY_PAGES,
+  }
 
   const notify = (): void => {
     for (const fn of [...listeners]) fn()
@@ -82,6 +103,10 @@ export function createStatsStore(
       sessionId: currentId,
       stats: lastSnap === undefined ? null : acc.toStats(lastSnap),
       loading,
+      historyState,
+      historyPages,
+      historyLimit: MAX_HISTORY_PAGES,
+      ...(historyError === undefined ? {} : { historyError }),
     }
     notify()
   }
@@ -117,24 +142,57 @@ export function createStatsStore(
   /** Page the complete history of a just-focused session into the snapshot. */
   const syncFullHistory = async (sessionId: SessionId, session: SessionFace, gen: number): Promise<void> => {
     loading = true
+    historyState = 'syncing'
+    historyPages = 0
+    historyError = undefined
     publish()
     let pages = 0
+    let failed = false
+    let blocked = false
     try {
       while (pages < MAX_HISTORY_PAGES && gen === loadGen) {
-        if (sessions.list.getSnapshot().current !== sessionId) break
+        if (sessions.list.getSnapshot().current !== sessionId) {
+          blocked = true
+          break
+        }
         const snap = live.getSnapshot()
-        if (snap === undefined || snap.sessionId !== sessionId) break
-        if (snap.openState !== 'open' || !snap.hasMore || snap.loadingOlder) break
+        if (snap === undefined || snap.sessionId !== sessionId) {
+          blocked = true
+          break
+        }
+        if (snap.openState === 'error') {
+          failed = true
+          break
+        }
+        if (snap.openState !== 'open' || snap.loadingOlder) {
+          blocked = true
+          break
+        }
+        if (!snap.hasMore) break
         await session.loadOlder()
         pages += 1
+        historyPages = pages
+        publish()
         // Let the republished snapshot land before re-reading hasMore.
         await new Promise(resolve => setTimeout(resolve, 0))
       }
     } catch {
-      /* robustness: a paging failure just stops the sync */
+      failed = true
     }
-    if (gen !== loadGen) return // user switched away; a newer sync owns `loading`
+    if (gen !== loadGen) return // user switched away; a newer sync owns the state
+
+    const finalSnap = live.getSnapshot()
+    const stillHasMore = finalSnap?.sessionId === sessionId && finalSnap.hasMore === true
     loading = false
+    if (failed || finalSnap?.openState === 'error') {
+      historyState = 'error'
+      historyError = 'load-failed'
+    } else if (blocked || stillHasMore) {
+      // Do not present an unavailable or page-capped result as complete.
+      historyState = 'limited'
+    } else {
+      historyState = 'complete'
+    }
     publish()
   }
 
@@ -153,8 +211,16 @@ export function createStatsStore(
     acc = cached
     loadGen += 1
     const gen = loadGen
+    historyState = 'syncing'
+    historyPages = 0
+    historyError = undefined
     const session = sessions.binding(sessionId)?.session
     if (session !== undefined) void syncFullHistory(sessionId, session, gen)
+    else {
+      loading = false
+      historyState = 'error'
+      historyError = 'session-unavailable'
+    }
   }
 
   const onLive = (): void => {
@@ -165,6 +231,9 @@ export function createStatsStore(
       currentId = undefined
       acc = new SessionStatsAccumulator()
       loading = false
+      historyState = 'idle'
+      historyPages = 0
+      historyError = undefined
       publish()
       return
     }

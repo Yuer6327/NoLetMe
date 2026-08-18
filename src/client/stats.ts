@@ -21,6 +21,9 @@ import {
   FIRST_TOKEN_ORDER, GROUPS, LATER_TOKEN_ORDER, PATTERNS, type Group, type Mode,
 } from './keywords.ts'
 
+/** Version of the session classifier and its scoring rules. */
+export const CLASSIFIER_VERSION = 1 as const
+
 /** Raw word-level research metrics. */
 export interface WordCounts {
   /** Bare "we" tokens (the minimal-trajectory metric: 272/231/179/165 vs 11/16). */
