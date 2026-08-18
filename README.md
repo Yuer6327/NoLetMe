@@ -3,7 +3,7 @@
 
 # NoLetMe · dsh 推理轨迹面板
 
-[![npm version](https://img.shields.io/npm/v/dsh-noletme)](https://www.npmjs.com/package/dsh-noletme)
+[![npm version](https://img.shields.io/npm/v/dsh-noletme)](https://www.npmjs.com/package/dsh-noletme) [![Awesome dsh-plugin](https://camo.githubusercontent.com/d49867731e8dae50cfe6c3e25a3ef1d845d4e55aace9b1da5a31d47162f8e683/68747470733a2f2f617765736f6d652d6473682d706c7567696e2e636f6d2f62616467652e737667)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 
 NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）网页端插件，在会话页右侧边缘挂载一块**实时推理关键词统计面板**。
 
