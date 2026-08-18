@@ -3,6 +3,8 @@
 
 # NoLetMe · dsh 推理轨迹面板
 
+[![npm version](https://img.shields.io/npm/v/dsh-noletme)](https://www.npmjs.com/package/dsh-noletme)
+
 NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）网页端插件，在会话页右侧边缘挂载一块**实时推理关键词统计面板**。
 
 模型流式输出时，NoLetMe 只统计其**推理块（reasoning blocks）**中出现的特征词，据此反映当前推理风格：
@@ -44,12 +46,10 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 **前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 的浏览器包按 0.1.0-rc.7 的客户端包构建与验证；更早的 rc 版本未保证兼容。
 
-**方式一 · 本地目录安装**
+**方式一 · npm 安装（推荐）** —— `dsh-noletme` 已发布到 npm，预构建安装，无需 `allowBuilds` 审批
 
 ```sh
-cd /path/to/this/repo/..            # 进入 NoLetMe/ 所在目录的上级
-dsh plugin --profile demo add ./NoLetMe
-dsh web --profile demo              # 或直接：dsh --profile demo
+dsh plugin --profile demo add dsh-noletme
 ```
 
 安装后即可在网页端右上角看到面板。
@@ -61,6 +61,14 @@ dsh plugin --profile demo add github:Yuer6327/NoLetMe
 ```
 
 > pnpm ≥ 10 默认拦截 git 依赖的 `prepare` 脚本。先把 pnpm 提示的包名写入该 profile 的 `pnpm-workspace.yaml`，再重新执行 `add`：
+
+**方式三 · 本地目录安装**
+
+```sh
+cd /path/to/this/repo/..            # 进入 NoLetMe/ 所在目录的上级
+dsh plugin --profile demo add ./NoLetMe
+dsh web --profile demo              # 或直接：dsh --profile demo
+```
 >
 > ```yaml
 > allowBuilds:
