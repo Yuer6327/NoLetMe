@@ -14,5 +14,5 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src", "tsdown.config.ts"]
+  "include": ["src", "tsdown.config.ts", "verify-dsh-rc7.ts"]
 }

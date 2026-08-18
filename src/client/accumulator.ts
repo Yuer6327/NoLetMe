@@ -27,11 +27,8 @@ import { KEYWORD_TAXONOMY_VERSION } from './keywords.ts'
 /** Version of the persisted accumulator schema. */
 export const PERSISTENCE_VERSION = 2 as const
 
-/** Serialized form persisted to localStorage. */
-export interface PersistedSessionStats {
-  v: typeof PERSISTENCE_VERSION
-  taxonomyVersion: typeof KEYWORD_TAXONOMY_VERSION
-  classifierVersion: typeof CLASSIFIER_VERSION
+/** Shared serialized accumulator fields from every persisted schema. */
+interface PersistedSessionStatsFields {
   minSeq: number
   maxSeq: number
   lastCompactionSeq: number
@@ -39,6 +36,26 @@ export interface PersistedSessionStats {
   /** Visible-text diagnostic totals (never word-counted). */
   textBlocks: number
   textChars: number
+}
+
+/** The schema written by the previous release; retained for migration. */
+export interface LegacyPersistedSessionStats extends PersistedSessionStatsFields {
+  v: 1
+}
+
+/** The current versioned schema written to localStorage. */
+export interface VersionedPersistedSessionStats extends PersistedSessionStatsFields {
+  v: typeof PERSISTENCE_VERSION
+  taxonomyVersion: typeof KEYWORD_TAXONOMY_VERSION
+  classifierVersion: typeof CLASSIFIER_VERSION
+}
+
+/** Accepted persisted schemas. v1 is read and migrated to the current schema. */
+export type PersistedSessionStats = LegacyPersistedSessionStats | VersionedPersistedSessionStats
+
+/** Read a finite persisted number, defaulting malformed values to zero. */
+function finiteNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
 /** One session's live accumulator. */
@@ -112,7 +129,7 @@ export class SessionStatsAccumulator {
   }
 
   /** Serialize for durable storage. */
-  persist(): PersistedSessionStats {
+  persist(): VersionedPersistedSessionStats {
     return {
       v: PERSISTENCE_VERSION,
       taxonomyVersion: KEYWORD_TAXONOMY_VERSION,
@@ -136,20 +153,39 @@ export class SessionStatsAccumulator {
   static load(data: unknown): SessionStatsAccumulator {
     const acc = new SessionStatsAccumulator()
     if (typeof data !== 'object' || data === null) return acc
-    const raw = data as Partial<PersistedSessionStats>
-    if (raw.v !== PERSISTENCE_VERSION) return acc
-    if (raw.taxonomyVersion !== KEYWORD_TAXONOMY_VERSION) return acc
-    if (raw.classifierVersion !== CLASSIFIER_VERSION) return acc
-    const counts = raw.counts
-    if (typeof counts !== 'object' || counts === null) return acc
+    const raw = data as {
+      v?: unknown
+      taxonomyVersion?: unknown
+      classifierVersion?: unknown
+      minSeq?: unknown
+      maxSeq?: unknown
+      lastCompactionSeq?: unknown
+      counts?: unknown
+      textBlocks?: unknown
+      textChars?: unknown
+    }
+    const isLegacy = raw.v === 1
+    const isCurrent = raw.v === PERSISTENCE_VERSION
+    if (!isLegacy && !isCurrent) return acc
+    if (isLegacy) {
+      // v1 used the same taxonomy/classifier rules but did not persist their
+      // identities. It is safe to migrate only while those original versions
+      // remain current; a future rule change must reject v1 and recount.
+      if (KEYWORD_TAXONOMY_VERSION !== 1 || CLASSIFIER_VERSION !== 1) return acc
+    } else if (raw.taxonomyVersion !== KEYWORD_TAXONOMY_VERSION
+      || raw.classifierVersion !== CLASSIFIER_VERSION) {
+      return acc
+    }
+    if (typeof raw.counts !== 'object' || raw.counts === null) return acc
+    const counts = raw.counts as Partial<SessionCounts>
     acc.minSeq = typeof raw.minSeq === 'number' ? raw.minSeq : 0
     acc.maxSeq = typeof raw.maxSeq === 'number' ? raw.maxSeq : -1
     acc.lastCompactionSeq = typeof raw.lastCompactionSeq === 'number' ? raw.lastCompactionSeq : 0
-    acc.counts.blocks = Number.isFinite(counts.blocks) ? counts.blocks : 0
-    acc.counts.chars = Number.isFinite(counts.chars) ? counts.chars : 0
-    acc.counts.replies = Number.isFinite(counts.replies) ? counts.replies : 0
-    acc.textBlocks = typeof raw.textBlocks === 'number' ? raw.textBlocks : 0
-    acc.textChars = typeof raw.textChars === 'number' ? raw.textChars : 0
+    acc.counts.blocks = finiteNumber(counts.blocks)
+    acc.counts.chars = finiteNumber(counts.chars)
+    acc.counts.replies = finiteNumber(counts.replies)
+    acc.textBlocks = finiteNumber(raw.textBlocks)
+    acc.textChars = finiteNumber(raw.textChars)
     if (Array.isArray(counts.patterns)) {
       for (let i = 0; i < acc.counts.patterns.length; i++) {
         const value = counts.patterns[i]

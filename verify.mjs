@@ -180,6 +180,9 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('accumulator: reload replies', reloaded.counts.replies, 1)
   check('accumulator: reload we', reloaded.counts.words.we, 1)
   check('accumulator: reload keeps fold-idempotence', reloaded.fold(compSnap), false)
+  const { taxonomyVersion: _taxonomy, classifierVersion: _classifier, ...legacy } = persisted
+  const legacyReload = SessionStatsAccumulator.load({ ...legacy, v: 1 })
+  check('accumulator: legacy v1 migrates', legacyReload.counts.replies, 1)
   check('accumulator: taxonomy mismatch → fresh', SessionStatsAccumulator.load({ ...persisted, taxonomyVersion: 999 }).counts.replies, 0)
   check('accumulator: classifier mismatch → fresh', SessionStatsAccumulator.load({ ...persisted, classifierVersion: 999 }).counts.replies, 0)
   check('accumulator: load garbage → fresh', SessionStatsAccumulator.load('nonsense').counts.replies, 0)
@@ -272,6 +275,24 @@ The user is asking for a quick fix. I think the issue is in the config.
   }
   const completeStore = createStatsStore(completeSessions, undefined)
   check('history with no older pages is complete', completeStore.getSnapshot().historyState, 'complete')
+
+  const legacyStorageData = new Map([
+    ['dsh-noletme.stats.complete', JSON.stringify({
+      v: 1,
+      minSeq: 0,
+      maxSeq: -1,
+      lastCompactionSeq: 0,
+      counts: { patterns: [], words: { we: 0, lets: 0, letMe: 0, firstPerson: 0 }, blocks: 0, chars: 0, replies: 0 },
+      textBlocks: 0,
+      textChars: 0,
+    })],
+  ])
+  const legacyStorage = {
+    getItem: key => legacyStorageData.get(key) ?? null,
+    setItem: (key, value) => { legacyStorageData.set(key, value) },
+  }
+  createStatsStore(completeSessions, legacyStorage)
+  check('legacy storage key is migrated', legacyStorageData.has('dsh-noletme.stats.v2.complete'), true)
 }
 
 // --- 10. Reasoning-health anomaly: text-without-reasoning is reported, never counted ---

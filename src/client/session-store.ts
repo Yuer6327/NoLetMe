@@ -38,12 +38,12 @@ export interface StatsSnapshot {
   stats: TrajectoryStats | null
   /** True while the complete history is still being paged in. */
   loading: boolean
-  /** Explicit result of the full-history synchronization. */
-  historyState: HistoryState
+  /** Explicit result of the full-history synchronization (optional for old consumers). */
+  historyState?: HistoryState
   /** Number of older pages loaded during the current synchronization. */
-  historyPages: number
+  historyPages?: number
   /** Configured page cap, useful when explaining a `limited` result. */
-  historyLimit: number
+  historyLimit?: number
   /** Stable, non-sensitive error code when history loading fails. */
   historyError?: 'load-failed' | 'session-unavailable'
 }
@@ -60,6 +60,11 @@ export type StatsStorage = Pick<Storage, 'getItem' | 'setItem'>
 
 function storageKey(sessionId: string): string {
   return `dsh-noletme.stats.v${PERSISTENCE_VERSION}.${sessionId}`
+}
+
+/** Key used by 0.1.2 and earlier; retained for one-way migration. */
+function legacyStorageKey(sessionId: string): string {
+  return `dsh-noletme.stats.${sessionId}`
 }
 
 /**
@@ -131,12 +136,36 @@ export function createStatsStore(
 
   const readPersisted = (sessionId: string): SessionStatsAccumulator => {
     if (storage === undefined) return new SessionStatsAccumulator()
-    try {
-      const raw = storage.getItem(storageKey(sessionId))
-      return raw === null ? new SessionStatsAccumulator() : SessionStatsAccumulator.load(JSON.parse(raw))
-    } catch {
-      return new SessionStatsAccumulator()
+    const keys = [storageKey(sessionId), legacyStorageKey(sessionId)]
+    for (const key of keys) {
+      let raw: string | null
+      try {
+        raw = storage.getItem(key)
+      } catch {
+        continue
+      }
+      if (raw === null) continue
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        const version = typeof parsed === 'object' && parsed !== null
+          ? (parsed as { v?: unknown }).v
+          : undefined
+        if (version !== 1 && version !== PERSISTENCE_VERSION) continue
+        const loaded = SessionStatsAccumulator.load(parsed)
+        // A valid legacy v1 record is rewritten under the versioned key. The
+        // old key is intentionally left intact because StatsStorage may not
+        // expose removeItem and other plugin versions may still use it.
+        if (key === legacyStorageKey(sessionId)
+          && typeof parsed === 'object' && parsed !== null
+          && (parsed as { v?: unknown }).v === 1) {
+          try { storage.setItem(storageKey(sessionId), JSON.stringify(loaded.persist())) } catch { /* best effort */ }
+        }
+        return loaded
+      } catch {
+        /* Try the legacy key if the current record is corrupt. */
+      }
     }
+    return new SessionStatsAccumulator()
   }
 
   /** Page the complete history of a just-focused session into the snapshot. */

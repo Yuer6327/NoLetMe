@@ -88,6 +88,10 @@ function writeOpenPreference(open: boolean): void {
 export function NoLetMePanel({ useStats, t }: NoLetMePanelProps) {
   const snap = useStats(state => state)
   const stats = snap.stats
+  // Older host/plugin stores do not expose history metadata; preserve their
+  // rendering contract with the old loading/idle interpretation.
+  const historyState: HistoryState = snap.historyState ?? (snap.loading ? 'syncing' : 'complete')
+  const historyPages = snap.historyPages ?? 0
   const [open, setOpen] = useState(readOpenPreference)
 
   const cardRef = useRef<HTMLDivElement>(null)
@@ -245,8 +249,8 @@ export function NoLetMePanel({ useStats, t }: NoLetMePanelProps) {
           t={t}
           stats={stats}
           loading={snap.loading}
-          historyState={snap.historyState}
-          historyPages={snap.historyPages}
+          historyState={historyState}
+          historyPages={historyPages}
         />
       </div>
     </div>
