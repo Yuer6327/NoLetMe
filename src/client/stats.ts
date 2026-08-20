@@ -16,7 +16,7 @@
  * never re-walks the whole conversation.
  */
 
-import type { AssistantBlock, ConversationSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { AssistantBlockView, ConversationView } from './conversation.ts'
 import {
   FIRST_TOKEN_ORDER, GROUPS, LATER_TOKEN_ORDER, PATTERNS, type Group, type Mode,
 } from './keywords.ts'
@@ -105,7 +105,7 @@ const EMPTY_COUNTS: BlockCounts = {
 }
 
 /** Per-block count cache keyed by block object identity. */
-const blockCache = new WeakMap<AssistantBlock, BlockCounts>()
+const blockCache: WeakMap<AssistantBlockView, BlockCounts> = new WeakMap()
 
 /** Split a normalized token stream once per block. */
 function tokenize(text: string): readonly string[] {
@@ -177,8 +177,8 @@ export function countReasoningText(text: string): BlockCounts {
  * @param block - one reasoning block.
  * @returns its counts (cached by block identity).
  */
-export function countBlock(block: AssistantBlock): BlockCounts {
-  if (block.kind !== 'reasoning' || block.text === '') return EMPTY_COUNTS
+export function countBlock(block: AssistantBlockView): BlockCounts {
+  if (block.kind !== 'reasoning' || block.text === undefined || block.text === '') return EMPTY_COUNTS
   const cached = blockCache.get(block)
   if (cached !== undefined) return cached
   const counts = countReasoningText(block.text)
@@ -203,7 +203,7 @@ export function emptySessionCounts(): SessionCounts {
  * @param target - mutable session counts.
  * @param block - assistant block.
  */
-export function foldBlock(target: SessionCounts, block: AssistantBlock): void {
+export function foldBlock(target: SessionCounts, block: AssistantBlockView): void {
   if (block.kind !== 'reasoning') return
   const counts = countBlock(block)
   if (counts.chars === 0) return
@@ -296,14 +296,14 @@ export function toTrajectoryStats(
  * @param snapshot - current conversation snapshot (undefined → null result).
  * @returns stats, or null while no session is current.
  */
-export function computeStats(snapshot: ConversationSnapshot | undefined): TrajectoryStats | null {
+export function computeStats(snapshot: ConversationView | undefined): TrajectoryStats | null {
   if (snapshot === undefined) return null
   const counts = emptySessionCounts()
   let textBlocks = 0
   let textChars = 0
-  const fold = (block: AssistantBlock): void => {
+  const fold = (block: AssistantBlockView): void => {
     if (block.kind === 'reasoning') foldBlock(counts, block)
-    else if (block.kind === 'text') {
+    else if (block.kind === 'text' && block.text !== undefined) {
       textBlocks += 1
       textChars += block.text.length
     }
@@ -311,7 +311,7 @@ export function computeStats(snapshot: ConversationSnapshot | undefined): Trajec
   for (const node of snapshot.nodes) {
     if (node.kind !== 'assistant') continue
     counts.replies += 1
-    for (const block of node.blocks) fold(block)
+    for (const block of node.blocks ?? []) fold(block)
   }
   if (snapshot.partial !== null) {
     for (const block of snapshot.partial.blocks) fold(block)

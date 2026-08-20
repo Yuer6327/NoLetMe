@@ -15,9 +15,7 @@
  * cache keyed by block identity (`stats.ts`).
  */
 
-import type {
-  AssistantMessageNode, ConversationSnapshot,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConversationNodeView, ConversationView } from './conversation.ts'
 import {
   CLASSIFIER_VERSION, emptySessionCounts, foldBlock, toTrajectoryStats,
   type SessionCounts, type TrajectoryStats,
@@ -75,7 +73,7 @@ export class SessionStatsAccumulator {
    * @param snapshot - current conversation snapshot.
    * @returns whether the durable counts changed.
    */
-  fold(snapshot: ConversationSnapshot): boolean {
+  fold(snapshot: ConversationView): boolean {
     let maxCompaction = 0
     for (const node of snapshot.nodes) {
       if (node.kind === 'compaction' && node.seq > maxCompaction) maxCompaction = node.seq
@@ -101,7 +99,7 @@ export class SessionStatsAccumulator {
   }
 
   /** Trajectory stats for the current snapshot, including live in-flight blocks. */
-  toStats(snapshot: ConversationSnapshot): TrajectoryStats {
+  toStats(snapshot: ConversationView): TrajectoryStats {
     const live: SessionCounts = {
       patterns: [...this.counts.patterns],
       words: { ...this.counts.words },
@@ -114,7 +112,7 @@ export class SessionStatsAccumulator {
     if (snapshot.partial !== null) {
       for (const block of snapshot.partial.blocks) {
         if (block.kind === 'reasoning') foldBlock(live, block)
-        else if (block.kind === 'text') {
+        else if (block.kind === 'text' && block.text !== undefined) {
           textBlocks += 1
           textChars += block.text.length
         }
@@ -202,11 +200,11 @@ export class SessionStatsAccumulator {
     return acc
   }
 
-  private foldNode(node: AssistantMessageNode): void {
+  private foldNode(node: ConversationNodeView): void {
     this.counts.replies += 1
-    for (const block of node.blocks) {
+    for (const block of node.blocks ?? []) {
       if (block.kind === 'reasoning') foldBlock(this.counts, block)
-      else if (block.kind === 'text') {
+      else if (block.kind === 'text' && block.text !== undefined) {
         this.textBlocks += 1
         this.textChars += block.text.length
       }

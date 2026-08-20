@@ -19,12 +19,10 @@
  * the in-memory session cache is bounded.
  */
 
-import type {
-  ConversationSnapshot, ISessions, SessionId, SessionFace,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { createLiveConversation } from './session-source.ts'
 import { PERSISTENCE_VERSION, SessionStatsAccumulator } from './accumulator.ts'
+import type { ConversationView, SessionPort, SessionsPort } from './conversation.ts'
 import type { TrajectoryStats } from './stats.ts'
 
 /** State of the full-history synchronization for the current session. */
@@ -33,7 +31,7 @@ export type HistoryState = 'idle' | 'syncing' | 'complete' | 'limited' | 'error'
 /** What the panel renders at one instant. */
 export interface StatsSnapshot {
   /** Session whose history is being counted; undefined while no session is current. */
-  sessionId: SessionId | undefined
+  sessionId: string | undefined
   /** Current trajectory stats; null while no session is current. */
   stats: TrajectoryStats | null
   /** True while the complete history is still being paged in. */
@@ -74,21 +72,21 @@ function legacyStorageKey(sessionId: string): string {
  * @returns a HostObservable the panel consumes as `useStats`.
  */
 export function createStatsStore(
-  sessions: ISessions,
+  sessions: SessionsPort,
   storage: StatsStorage = (typeof window === 'undefined' ? undefined : window.localStorage) as StatsStorage,
 ): HostObservable<StatsSnapshot> {
   const live = createLiveConversation(sessions)
   const listeners = new Set<() => void>()
   const accCache = new Map<string, SessionStatsAccumulator>()
 
-  let currentId: SessionId | undefined
+  let currentId: string | undefined
   let acc = new SessionStatsAccumulator()
   let loading = false
   let historyState: HistoryState = 'idle'
   let historyPages = 0
   let historyError: StatsSnapshot['historyError']
   let historySyncRunning = false
-  let lastSnap: ConversationSnapshot | undefined
+  let lastSnap: ConversationView | undefined
   let loadGen = 0
   let persistTimer: ReturnType<typeof setTimeout> | undefined
   let value: StatsSnapshot = {
@@ -170,7 +168,7 @@ export function createStatsStore(
   }
 
   /** Page the complete history of a just-focused session into the snapshot. */
-  const syncFullHistory = async (sessionId: SessionId, session: SessionFace, gen: number): Promise<void> => {
+  const syncFullHistory = async (sessionId: string, session: SessionPort, gen: number): Promise<void> => {
     if (historySyncRunning) return
     historySyncRunning = true
     loading = true
@@ -196,7 +194,7 @@ export function createStatsStore(
           break
         }
         if (snap.openState !== 'open' || snap.loadingOlder) {
-          // A selected rc7 session can be cold/loading while the host opens it.
+          // A selected session can be cold/loading while the host opens it.
           // Keep the state syncing and retry when the session publishes again;
           // never turn this transient state into a false `limited` result.
           waitingForOpen = true
@@ -239,7 +237,7 @@ export function createStatsStore(
     publish()
   }
 
-  const switchTo = (sessionId: SessionId): void => {
+  const switchTo = (sessionId: string): void => {
     if (currentId !== undefined) persistNow(currentId, acc)
     currentId = sessionId
     let cached = accCache.get(sessionId)

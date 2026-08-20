@@ -3,9 +3,14 @@
  *
  * `shell.overlay` is root-scoped, so the panel does not receive the
  * framework `useSession` standard prop. This builds a `HostObservable` over
- * the *current* session's `ConversationSnapshot` (via `ctx.sessions.binding`
- * → `SessionFace`, which is `ISession & ObservableSnapshot<ConversationSnapshot>`)
- * and hands it to the consumer through a subscribe/getSnapshot pair.
+ * the *current* session's conversation slice (via `ctx.sessions.binding`
+ * → session face) and hands it to the consumer through a subscribe/getSnapshot
+ * pair.
+ *
+ * The host snapshot is projected through {@link conversationViewOf}: the
+ * counting fields (`nodes`/`partial`/`openState`/`hasMore`) are the
+ * documented compatibility slice on rc.7 and rc.8; if a later host drops the
+ * top-level fields, `chat.legacy` is used instead.
  *
  * The observable re-targets whenever the session list's `current` selection
  * changes and re-notifies on every snapshot publish of the tracked session —
@@ -15,20 +20,20 @@
  * session's snapshot without waiting for that session to stream.
  */
 
-import type { ConversationSnapshot, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import { conversationViewOf, type ConversationView, type SessionsPort } from './conversation.ts'
 
 /**
  * Build a session-tracking observable.
  * @param sessions - `ctx.sessions` (client runtime service).
- * @returns an observable of the current session's conversation snapshot.
+ * @returns an observable of the current session's conversation slice.
  */
 export function createLiveConversation(
-  sessions: ISessions,
-): HostObservable<ConversationSnapshot | undefined> {
+  sessions: SessionsPort,
+): HostObservable<ConversationView | undefined> {
   const listeners = new Set<() => void>()
   let unsubSession: (() => void) | undefined
-  let snapshot: ConversationSnapshot | undefined
+  let snapshot: ConversationView | undefined
 
   const notify = (): void => {
     for (const fn of [...listeners]) fn()
@@ -50,18 +55,19 @@ export function createLiveConversation(
       notify()
       return
     }
-    snapshot = session.getSnapshot()
+    snapshot = conversationViewOf(session.getSnapshot())
     unsubSession = session.subscribe(() => {
       // SessionFace publishes a notification rather than passing the snapshot.
       // Refresh the value before notifying consumers so streaming deltas are
       // visible to the stats store instead of leaving it on the first snapshot.
-      snapshot = session.getSnapshot()
+      snapshot = conversationViewOf(session.getSnapshot())
       notify()
     })
     notify() // selection moved: repaint now, before the new session publishes
   }
 
   const offList = sessions.list.subscribe(resubscribe)
+  void offList
   resubscribe()
 
   return {

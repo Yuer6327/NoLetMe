@@ -34,7 +34,7 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: dsh rc.7 compatibility
+      - name: dsh host compatibility
         run: pnpm compat
 
       - name: Build

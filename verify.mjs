@@ -315,6 +315,47 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('legacy storage key is migrated', legacyStorageData.has('dsh-noletme.stats.v2.complete'), true)
 }
 
+// --- 11. Host snapshot projection: top-level slice and rc.8+ chat.legacy fallback ---
+{
+  const { conversationViewOf } = await import('./src/client/conversation.ts')
+  const topLevel = conversationViewOf({
+    sessionId: 's1',
+    nodes: [{ kind: 'assistant', seq: 1, blocks: [{ kind: 'reasoning', text: 'We need this.' }] }],
+    partial: { turn: 1, step: 1, blocks: [{ kind: 'text', text: 'hi' }] },
+    openState: 'open',
+    hasMore: false,
+    loadingOlder: false,
+  })
+  check('view: top-level sessionId', topLevel.sessionId, 's1')
+  check('view: top-level nodes', topLevel.nodes.length, 1)
+  check('view: top-level partial present', topLevel.partial !== null, true)
+
+  const legacyOnly = conversationViewOf({
+    sessionId: 's2',
+    chat: {
+      legacy: {
+        nodes: [{ kind: 'assistant', seq: 2, blocks: [{ kind: 'reasoning', text: "Let's go." }] }],
+        partial: null,
+      },
+    },
+  })
+  check('view: chat.legacy nodes', legacyOnly.nodes[0].seq, 2)
+  check('view: chat.legacy default open', legacyOnly.openState, 'open')
+  check('view: chat.legacy default hasMore', legacyOnly.hasMore, false)
+  const topLevelNullPartial = conversationViewOf({
+    sessionId: 's3',
+    nodes: [],
+    partial: null,
+    chat: { legacy: { partial: { blocks: [{ kind: 'reasoning', text: 'stale' }] } } },
+  })
+  check('view: explicit null partial wins over chat.legacy', topLevelNullPartial.partial, null)
+  check('view: missing sessionId is undefined', conversationViewOf({ nodes: [] }), undefined)
+
+  const acc = new (await import('./src/client/accumulator.ts')).SessionStatsAccumulator()
+  acc.fold(legacyOnly)
+  check('view: accumulator folds chat.legacy', acc.counts.replies, 1)
+}
+
 // --- 10. Reasoning-health anomaly: text-without-reasoning is reported, never counted ---
 {
   const { computeStats } = await import('./src/client/stats.ts')

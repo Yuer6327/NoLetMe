@@ -44,7 +44,7 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 ## 安装
 
-**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 的浏览器包按 0.1.0-rc.7 的客户端包构建与验证；更早的 rc 版本未保证兼容。
+**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8 以及之后的 0.1 更新**。更早的 rc 版本未保证兼容。
 
 **方式一 · npm 安装（推荐）** —— `dsh-noletme` 已发布到 npm，预构建安装，无需 `allowBuilds` 审批
 
@@ -109,9 +109,9 @@ pnpm typecheck    # 可选；tsc --noEmit
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/client.js（浏览器包）
 ```
 
-客户端依赖（`@deepseek-ai/dsh-client-*`）与 dsh CLI 内置的客户端包版本对齐，固定 `^0.1.0-rc.7`。
+客户端依赖（`@deepseek-ai/dsh-client-*`）声明为 `>=0.1.0-rc.7 <0.2.0`，覆盖 rc.7、rc.8 以及后续 0.1.x。浏览器包只 `require` rc.7∩rc.8 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；会话快照按结构子集读取（顶层 `nodes`/`partial`，必要时回退 `chat.legacy`），不把 runtime 打进冻结模块表。
 
-> ⚠️ 这些包在 npm 的 `latest` 标签是**过期**的 `0.0.1-rc.1`，真实最新版走 `next`（= `0.1.0-rc.7`）。升级依赖时请显式写 `^0.1.0-rc.7`，**不要用 `@latest`**。
+> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（`@deepseek-ai/dsh` 的 `latest` 仍可能是 rc.7，而 `next` 已是 rc.8+）。升级依赖时请显式写 `>=0.1.0-rc.7 <0.2.0` 或具体 rc，**不要用 `@latest`**。
 
 > dsh CLI 升级后无需重装 profile：基底包（`dsh-base`、`dsh-web-app` 等）按"安装优先"从 CLI 自身解析，profile 里的行会自动跟到新版本。
 
@@ -126,7 +126,8 @@ src/
     ├── index.ts        # 浏览器包入口（apply/inject）
     ├── apply.ts        # 注册 shell.overlay 入口 + 统计 store
     ├── slots.ts        # inject-face + composed-props 契约
-    ├── session-source.ts # 当前会话 ConversationSnapshot 可观察源
+    ├── conversation.ts   # 宿主快照结构子集（nodes/partial 或 chat.legacy）
+    ├── session-source.ts # 当前会话 ConversationView 可观察源
     ├── session-store.ts  # 统计 store：实时折叠、全历史翻页、持久化
     ├── accumulator.ts  # 每会话增量折叠 + 压缩 + 序列化
     ├── keywords.ts     # 有研究依据的关键词表
@@ -135,7 +136,7 @@ src/
     └── locales.ts      # zh + en 词典
 ```
 
-推理流以 `reasoning-delta` 分块到达，会话层累加进 `ConversationSnapshot.partial`（每动画帧至多发布一次），落定的轮次进 `snapshot.nodes`。统计 store 对两者都做**增量**折叠（按块身份缓存计数，新节点由 seq 高水位门控），发布现成的 `TrajectoryStats` —— 面板从不整段重算会话。`shell.overlay` 是布局的帧级纯增量席位，面板样式镜像 DetailsPanel。
+推理流以 `reasoning-delta` 分块到达，会话层累加进 `partial`（每动画帧至多发布一次），落定的轮次进 `nodes`。rc.8 起宿主另有 `chat`/`views`，但顶层 `nodes`/`partial` 仍是兼容切片；若未来只剩 `chat.legacy`，`conversationViewOf` 会回退到那里。统计 store 对两者都做**增量**折叠（按块身份缓存计数，新节点由 seq 高水位门控），发布现成的 `TrajectoryStats` —— 面板从不整段重算会话。`shell.overlay` 是布局的帧级纯增量席位，面板样式镜像 DetailsPanel。
 
 ## 许可证
 

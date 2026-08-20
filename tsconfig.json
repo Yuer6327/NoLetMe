@@ -9,10 +9,11 @@
     "types": ["node"],
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "esModuleInterop": true,
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true
   },
-  "include": ["src", "tsdown.config.ts", "verify-dsh-rc7.ts"]
+  "include": ["src", "tsdown.config.ts", "verify-dsh-host.ts"]
 }

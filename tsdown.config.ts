@@ -13,10 +13,9 @@
  *     modules through the loader's frozen module table, and inlines CSS
  *     Modules (compiled by lightningcss, injected as a `<style data-plugin>`).
  *
- * The externals list mirrors `packages/client/web/src/platform.ts` plus the
- * documented `@deepseek-ai/dsh-client-runtime/client` store exemption. Every
- * other `@deepseek-ai/*` value import is a build error (the purity gate): the
- * module table cannot answer a specifier it does not know.
+ * The externals list is the rc.7 ∩ rc.8 platform seed (`platform-modules.json`).
+ * Every other `@deepseek-ai/*` value import is a build error (the purity gate):
+ * the module table cannot answer a specifier it does not know.
  */
 import { readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -24,25 +23,28 @@ import { basename, dirname, resolve as resolvePath, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'tsdown'
 import { transform } from 'lightningcss'
+import platformModules from './src/client/platform-modules.json' with { type: 'json' }
 
 /** Stable plugin id: must equal the package name (the loader keys graph rows and bundles by it). */
 const PACKAGE_ID = 'dsh-noletme'
 
-/** Platform modules the shell shares into the frozen module table (packages/client/web/src/platform.ts). */
-const PLATFORM_MODULES = [
-  'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client', '@deepseek-ai/cordis',
-  '@deepseek-ai/dsh-client-ui-slots',
-  '@deepseek-ai/dsh-client-web-react',
-  '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-ui-attachment',
-  '@deepseek-ai/dsh-client-schema-form',
-] as const
-
-/** Documented lazy-CJS exemption (runtime snapshot-store engine). */
-const RUNTIME_STORE_EXEMPTION = '@deepseek-ai/dsh-client-runtime/client'
+/**
+ * Platform modules the shell shares into the frozen module table.
+ *
+ * This is the intersection of the rc.7 table and the rc.8 table (rc.8 dropped
+ * `dsh-client-web-react`, `dsh-client-ui-attachment`, and `dsh-client-schema-form`
+ * from the seed). Listing a specifier the host does not seed is a runtime
+ * `require` miss, so the bundle only externalizes words both hosts answer.
+ * Later 0.1.x hosts that keep adding seed words remain compatible; shrinking
+ * this set further is a breaking host change that CI's contract probe will catch.
+ *
+ * Runtime is a graph-row plugin, not a seed word. Counting reads the snapshot
+ * structurally, so the client bundle must not `require` `@deepseek-ai/dsh-client-runtime/client`.
+ */
+const PLATFORM_MODULES: readonly string[] = platformModules
 
 /** Specifiers resolved from the loader module table at bundle load time. */
-const CLIENT_EXTERNALS: string[] = [...PLATFORM_MODULES, RUNTIME_STORE_EXEMPTION]
+const CLIENT_EXTERNALS: string[] = [...PLATFORM_MODULES]
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('..', import.meta.url))
 
