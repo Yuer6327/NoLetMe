@@ -400,9 +400,9 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('anomaly: empty assistant → none', bare.anomaly, 'none')
 }
 
-// --- 12. Gray-test probe: current turn only; 0813 classifier stays unchanged ---
+// --- 12. Gray-test probe: all loaded reasoning; 0813 classifier stays unchanged ---
 {
-  const { probeGray, probeGrayTurn } = await import('./src/client/graytest.ts')
+  const { probeGray, probeGraySession } = await import('./src/client/graytest.ts')
   const { computeStats } = await import('./src/client/stats.ts')
   const { PATTERNS } = await import('./src/client/keywords.ts')
 
@@ -414,6 +414,8 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('gray: I\'m doing profile', imDoing.profile, 'im-doing')
   check('gray: I\'m doing count', imDoing.imDoing, 2)
   check('gray: opener captured', imDoing.opener.startsWith("I'm doing"), true)
+  check('gray: style blocks', imDoing.style.blocks, 1)
+  check('gray: style ttr in (0,1]', imDoing.style.typeToken > 0 && imDoing.style.typeToken <= 1, true)
 
   const jammed = probeGray([{ kind: 'reasoning', text: "I'mdoing the next step of the build." }])
   check('gray: jammed I\'mdoing still counts', jammed.imDoing, 1)
@@ -424,6 +426,7 @@ The user is asking for a quick fix. I think the issue is in the config.
   }])
   check('gray: outline-only → possible', summary.verdict, 'possible')
   check('gray: outline profile', summary.profile, 'summary')
+  check('gray: outline listRatio high', summary.style.listRatio >= 0.8, true)
 
   const dirty = probeGray([{
     kind: 'reasoning',
@@ -452,6 +455,7 @@ The user is asking for a quick fix. I think the issue is in the config.
     { kind: 'reasoning', text: 'We can then open the editor to patch the build script if needed.' },
   ])
   check('gray: 0813 multi-block we-need is still a miss', manyBlocks.verdict, 'miss')
+  check('gray: style still reports p50 on a miss', manyBlocks.style.p50 > 0, true)
 
   const snap = computeStats({
     sessionId: 'g1',
@@ -465,25 +469,28 @@ The user is asking for a quick fix. I think the issue is in the config.
     loadingOlder: false,
   })
   check('gray: 0813 session mode still hesitant', snap.mode, 'hesitant')
-  check('gray: current-turn probe uses partial', snap.gray.verdict, 'likely')
-  check('gray: current-turn ignores prior let-me', snap.gray.imDoing, 1)
+  check('gray: session probe sees I\'m doing', snap.gray.imDoing, 1)
+  // Prior Let me still counts against the gray score, so this mixed history is
+  // not a clean 08-19 hit — the 0813 classifier stays the session mode.
   check('gray: 0813 letMe still counted session-wide', snap.words.letMe, 1)
   const letMeIdx = PATTERNS.findIndex(p => p.label === 'pattern.letMe')
   check('gray: 0813 pattern table length unchanged', PATTERNS.length, 24)
   check('gray: 0813 let-me pattern still present', letMeIdx >= 0, true)
 
-  const turn = probeGrayTurn({
+  const session = probeGraySession({
     sessionId: 'g2',
-    nodes: [{
-      kind: 'assistant', seq: 2,
-      blocks: [{ kind: 'reasoning', text: "I'm doing a finalized last turn." }],
-    }],
+    nodes: [
+      { kind: 'assistant', seq: 1, blocks: [{ kind: 'reasoning', text: "I'm doing the first turn." }] },
+      { kind: 'assistant', seq: 2, blocks: [{ kind: 'reasoning', text: "I'm doing the second turn too." }] },
+    ],
     partial: null,
     openState: 'open',
     hasMore: false,
     loadingOlder: false,
   })
-  check('gray: finalized last assistant is the current turn', turn.verdict, 'likely')
+  check('gray: all assistant reasoning is folded', session.imDoing, 2)
+  check('gray: two-turn I\'m doing is likely', session.verdict, 'likely')
+  check('gray: style blocks = 2', session.style.blocks, 2)
 
   const empty = probeGray([{ kind: 'text', text: "I'm doing this in visible text." }])
   check('gray: text blocks are never probed', empty.verdict, 'miss')

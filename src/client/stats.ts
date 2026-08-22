@@ -17,7 +17,7 @@
  */
 
 import type { AssistantBlockView, ConversationView } from './conversation.ts'
-import { emptyGrayProbe, probeGrayTurn, type GrayProbe } from './graytest.ts'
+import { emptyGrayProbe, probeGraySession, type GrayProbe } from './graytest.ts'
 import {
   FIRST_TOKEN_ORDER, GROUPS, LATER_TOKEN_ORDER, PATTERNS, type Group, type Mode,
 } from './keywords.ts'
@@ -98,8 +98,8 @@ export interface TrajectoryStats {
   /** 0..1 hesitation pressure: letMe / (we + let's + letMe). */
   readonly hesitation: number
   /**
-   * Gray-test probe for the **current turn only** (in-flight partial, else the
-   * last assistant node). Independent of the 0813 session classifier.
+   * Gray-test probe over **all loaded reasoning blocks**. Independent of the
+   * 0813 session classifier.
    */
   readonly gray: GrayProbe
 }
@@ -250,7 +250,7 @@ export function anomalyOf(
  * @param counts - folded reasoning counts.
  * @param streaming - whether a turn is streaming.
  * @param diagnostics - visible-text totals used for the anomaly grade.
- * @param gray - current-turn gray-test probe (defaults to empty).
+ * @param gray - session-wide gray-test probe (defaults to empty).
  */
 export function toTrajectoryStats(
   counts: SessionCounts,
@@ -329,7 +329,7 @@ export function computeStats(snapshot: ConversationView | undefined): Trajectory
     counts,
     snapshot.partial !== null,
     { textBlocks, textChars },
-    probeGrayTurn(snapshot),
+    probeGraySession(snapshot),
   )
 }
 

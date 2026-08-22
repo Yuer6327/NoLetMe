@@ -16,7 +16,7 @@
  */
 
 import type { ConversationNodeView, ConversationView } from './conversation.ts'
-import { probeGrayTurn } from './graytest.ts'
+import { probeGraySession } from './graytest.ts'
 import {
   CLASSIFIER_VERSION, emptySessionCounts, foldBlock, toTrajectoryStats,
   type SessionCounts, type TrajectoryStats,
@@ -123,7 +123,7 @@ export class SessionStatsAccumulator {
       live,
       snapshot.partial !== null,
       { textBlocks, textChars },
-      probeGrayTurn(snapshot),
+      probeGraySession(snapshot),
     )
   }
 

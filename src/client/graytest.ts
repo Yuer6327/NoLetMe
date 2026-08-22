@@ -1,31 +1,23 @@
 /**
- * Gray-test probe for the **current turn**.
+ * Gray-test probe over **every reasoning block** in the loaded conversation.
  *
  * The 0813 trajectory classifier (`stats.ts` / `keywords.ts`) stays untouched:
- * it still folds the whole session into We-need / Let-me / The-user-wants. This
- * module answers a different question the 0813 word list cannot: did *this*
- * round draw the community gray-test backend?
+ * it still folds We-need / Let-me / The-user-wants. This module answers a
+ * different question: does the loaded reasoning match the community gray-test
+ * cluster (2026-06 expert-mode, 2026-07 summary CoT, 2026-08-19/08-20
+ * `I'm doing` reruns)?
  *
- * Features are the ones reported across the 2026-06 expert-mode gray, the
- * 2026-07 "summary CoT" Web gray, and the 2026-08-19/08-20 V4 Pro reruns
- * (linux.do / locdd / X):
- *
- *   - lexical fingerprint `I'm doing` / `I am doing` (absent from 0813 GA)
- *   - summary-shaped CoT (list/outline, short paragraphs, "list then do")
- *   - chunked reasoning blocks (段尾停顿 → 下一段突然一大段)
- *   - leaked dirty tokens (`Nameeee`, `antml:thinking`, …)
- *   - leaked backend fingerprint strings (`fp_v4pro_…`)
- *
- * None of these prove routing or identity — they are observational hits. The
- * panel reports a conservative verdict plus the raw evidence.
+ * Scoring is observational, not a routing proof. Style numbers (list density,
+ * p50 block length, type-token ratio) are reported as complete data even on a
+ * miss so the panel can show the fingerprint without a prose caption.
  */
 
 import type { AssistantBlockView, ConversationView } from './conversation.ts'
 
 /** Version of the gray-test probe (independent of the 0813 classifier). */
-export const GRAYTEST_VERSION = 1 as const
+export const GRAYTEST_VERSION = 2 as const
 
-/** How confidently this turn matches the gray-test cluster. */
+/** How confidently the loaded reasoning matches the gray-test cluster. */
 export type GrayVerdict = 'miss' | 'possible' | 'likely'
 
 /** Dominant gray-test family, when any. */
@@ -38,26 +30,55 @@ export interface GrayEvidence {
   readonly detail?: string
 }
 
-/** Probe result for the current assistant turn. */
+/** Local style / statistical fingerprint over reasoning (not a model-identity claim). */
+export interface StyleStats {
+  /** Reasoning blocks folded into the probe. */
+  readonly blocks: number
+  /** Total reasoning characters. */
+  readonly chars: number
+  /** Median reasoning-block length. */
+  readonly p50: number
+  /** Mean reasoning-block length. */
+  readonly avg: number
+  /** Fraction of non-empty lines that look like list / heading items (0..1). */
+  readonly listRatio: number
+  /** Type-token ratio of reasoning tokens (0..1). */
+  readonly typeToken: number
+  /** Mean alphabetic-token length. */
+  readonly avgWordLen: number
+}
+
+/** Probe result over all loaded reasoning. */
 export interface GrayProbe {
   readonly verdict: GrayVerdict
   /** 0..1, score / 8 clamped. */
   readonly confidence: number
   readonly profile: GrayProfile
   readonly score: number
-  /** First-line opener of the first reasoning block (truncated). */
+  /** First line of the latest reasoning block (truncated). */
   readonly opener: string
-  /** `I'm doing` / `I am doing` hits in this turn's reasoning. */
+  /** `I'm doing` / `I am doing` hits across all reasoning. */
   readonly imDoing: number
-  /** 0..1 outline/list density. */
+  /** Outline/list density (same as `style.listRatio`). */
   readonly summaryScore: number
-  /** Several mid-length reasoning blocks in one turn (chunked delivery). */
+  /** Several mid-length reasoning blocks (supporting signal only). */
   readonly chunked: boolean
   /** Distinct dirty-token hits found in reasoning. */
   readonly dirtyTokens: readonly string[]
   /** Distinct `fp_…` backend fingerprint strings. */
   readonly fingerprints: readonly string[]
+  readonly style: StyleStats
   readonly evidence: readonly GrayEvidence[]
+}
+
+const EMPTY_STYLE: StyleStats = {
+  blocks: 0,
+  chars: 0,
+  p50: 0,
+  avg: 0,
+  listRatio: 0,
+  typeToken: 0,
+  avgWordLen: 0,
 }
 
 const EMPTY_PROBE: GrayProbe = {
@@ -71,6 +92,7 @@ const EMPTY_PROBE: GrayProbe = {
   chunked: false,
   dirtyTokens: [],
   fingerprints: [],
+  style: EMPTY_STYLE,
   evidence: [],
 }
 
@@ -89,19 +111,6 @@ const FINGERPRINT_RE = /\bfp_(?:v4pro_)?[a-zA-Z0-9][a-zA-Z0-9_\-]{3,}\b/g
 /** `I'm doing` / `I am doing` / jammed `I'mdoing`. */
 const IM_DOING_RE = /\bi(?:['’]m| am)\s*doing\b/gi
 
-/**
- * The in-flight partial, otherwise the last finalized assistant node — that
- * is the "current round" the gray-test draw applies to.
- */
-export function currentTurnOf(snapshot: ConversationView): readonly AssistantBlockView[] {
-  if (snapshot.partial !== null) return snapshot.partial.blocks
-  for (let i = snapshot.nodes.length - 1; i >= 0; i--) {
-    const node = snapshot.nodes[i]
-    if (node.kind === 'assistant') return node.blocks ?? []
-  }
-  return []
-}
-
 function reasoningTexts(blocks: readonly AssistantBlockView[]): string[] {
   const out: string[] = []
   for (const block of blocks) {
@@ -109,6 +118,32 @@ function reasoningTexts(blocks: readonly AssistantBlockView[]): string[] {
     out.push(block.text)
   }
   return out
+}
+
+/**
+ * Every reasoning block in the loaded snapshot: finalized assistant nodes in
+ * order, then the in-flight partial. History not yet paged in is out of scope
+ * (same window as the 0813 fold).
+ */
+export function allReasoningBlocks(snapshot: ConversationView): readonly AssistantBlockView[] {
+  const out: AssistantBlockView[] = []
+  for (const node of snapshot.nodes) {
+    if (node.kind !== 'assistant') continue
+    for (const block of node.blocks ?? []) {
+      if (block.kind === 'reasoning' && block.text !== undefined && block.text !== '') out.push(block)
+    }
+  }
+  if (snapshot.partial !== null) {
+    for (const block of snapshot.partial.blocks) {
+      if (block.kind === 'reasoning' && block.text !== undefined && block.text !== '') out.push(block)
+    }
+  }
+  return out
+}
+
+/** @deprecated Use {@link allReasoningBlocks}; kept for older tests. */
+export function currentTurnOf(snapshot: ConversationView): readonly AssistantBlockView[] {
+  return allReasoningBlocks(snapshot)
 }
 
 function firstLine(text: string): string {
@@ -135,17 +170,31 @@ function countWe(text: string): number {
   return matches === null ? 0 : matches.length
 }
 
-function summaryShape(text: string): { listRatio: number; shortPara: boolean } {
-  const lines = text.split(/\n+/u).map(line => line.trim()).filter(line => line !== '')
-  if (lines.length === 0) return { listRatio: 0, shortPara: false }
+function tokenize(text: string): readonly string[] {
+  return text
+    .toLowerCase()
+    .split(/\s+/u)
+    .map(token => token.replace(/^[^a-z0-9']+|[^a-z0-9']+$/gu, ''))
+    .filter(token => token !== '')
+}
+
+function summaryShape(texts: readonly string[]): { listRatio: number; shortPara: boolean } {
+  let lines = 0
   let list = 0
-  for (const line of lines) {
-    if (/^(?:[-*•]|\d+[.)]|#{1,3}\s)/u.test(line)) list += 1
+  let chars = 0
+  for (const text of texts) {
+    const parts = text.split(/\n+/u).map(line => line.trim()).filter(line => line !== '')
+    for (const line of parts) {
+      lines += 1
+      chars += line.length
+      if (/^(?:[-*•]|\d+[.)]|#{1,3}\s)/u.test(line)) list += 1
+    }
   }
-  const avg = text.length / lines.length
+  if (lines === 0) return { listRatio: 0, shortPara: false }
+  const avg = chars / lines
   return {
-    listRatio: list / lines.length,
-    shortPara: lines.length >= 3 && avg < 140,
+    listRatio: list / lines,
+    shortPara: lines >= 3 && avg < 140,
   }
 }
 
@@ -174,25 +223,42 @@ function clamp01(value: number): number {
   return value
 }
 
+function styleOf(texts: readonly string[], listRatio: number): StyleStats {
+  const lengths = texts.map(text => text.length)
+  const chars = lengths.reduce((sum, n) => sum + n, 0)
+  const tokens = tokenize(texts.join('\n'))
+  const types = new Set(tokens)
+  const letterLens = tokens.map(token => token.replace(/'/g, '').length).filter(n => n > 0)
+  const wordSum = letterLens.reduce((sum, n) => sum + n, 0)
+  return {
+    blocks: texts.length,
+    chars,
+    p50: Math.round(median(lengths)),
+    avg: texts.length === 0 ? 0 : Math.round(chars / texts.length),
+    listRatio,
+    typeToken: tokens.length === 0 ? 0 : types.size / tokens.length,
+    avgWordLen: letterLens.length === 0 ? 0 : wordSum / letterLens.length,
+  }
+}
+
 /**
- * Probe one turn's reasoning blocks. Public for tests; the session fold calls
- * this on the current turn only (never on the whole history).
- * @param blocks - assistant blocks of the current turn.
+ * Probe a bag of assistant blocks (tests). Live folding uses {@link probeGraySession}.
+ * @param blocks - assistant blocks; non-reasoning entries are ignored.
  */
 export function probeGray(blocks: readonly AssistantBlockView[]): GrayProbe {
   const texts = reasoningTexts(blocks)
   if (texts.length === 0) return EMPTY_PROBE
 
   const joined = texts.join('\n')
-  const opener = firstLine(texts[0])
+  const opener = firstLine(texts[texts.length - 1])
   const imDoing = countImDoing(joined)
   const letMe = countLetMe(joined)
   const we = countWe(joined)
-  const shape = summaryShape(joined)
+  const shape = summaryShape(texts)
   // Outline bullets are the summary-CoT tell. Short paragraphs alone are too
   // common in 0813 We-need blocks to count without an I'm-doing fingerprint.
   const summaryHit = shape.listRatio >= 0.35 || (shape.shortPara && imDoing > 0)
-  const summaryScore = clamp01(shape.listRatio + (shape.shortPara ? 0.35 : 0))
+  const summaryScore = clamp01(shape.listRatio)
 
   const lengths = texts.map(text => text.length)
   const mid = median(lengths)
@@ -204,6 +270,7 @@ export function probeGray(blocks: readonly AssistantBlockView[]): GrayProbe {
   }
 
   const fingerprints = unique(joined.match(FINGERPRINT_RE) ?? [])
+  const style = styleOf(texts, shape.listRatio)
 
   const evidence: GrayEvidence[] = []
   let score = 0
@@ -225,15 +292,15 @@ export function probeGray(blocks: readonly AssistantBlockView[]): GrayProbe {
     evidence.push({
       id: 'summary-shape',
       hit: true,
-      detail: `${Math.round(shape.listRatio * 100)}% list`,
+      detail: `${Math.round(shape.listRatio * 100)}%`,
     })
   }
-  // Streaming cadence (段尾停顿) is not in the snapshot. Multiple reasoning
-  // blocks per turn is also how 0813 stores a long trajectory, so chunking
+  // Streaming cadence (段尾停顿) is not in the snapshot. Many mid-length
+  // reasoning blocks is also how 0813 stores a long trajectory, so chunking
   // only supports a hit that already has I'm-doing / outline / leaked fp.
   if (chunked && (imDoing > 0 || summaryHit || dirtyTokens.length > 0 || fingerprints.length > 0)) {
     score += 1
-    evidence.push({ id: 'chunked-blocks', hit: true, detail: `${texts.length} blocks` })
+    evidence.push({ id: 'chunked-blocks', hit: true, detail: `${texts.length}` })
   }
   if (dirtyTokens.length > 0) {
     score += 2
@@ -252,7 +319,7 @@ export function probeGray(blocks: readonly AssistantBlockView[]): GrayProbe {
     ? 'im-doing'
     : dirtyTokens.length > 0 || fingerprints.length > 0
       ? 'fingerprint'
-      : summaryHit || chunked
+      : summaryHit
         ? 'summary'
         : 'none'
 
@@ -267,19 +334,25 @@ export function probeGray(blocks: readonly AssistantBlockView[]): GrayProbe {
     chunked,
     dirtyTokens,
     fingerprints,
+    style,
     evidence,
   }
 }
 
 /**
- * Probe the current turn of a conversation snapshot.
+ * Probe every loaded reasoning block of a conversation snapshot.
  * @param snapshot - live conversation view.
  */
-export function probeGrayTurn(snapshot: ConversationView): GrayProbe {
-  return probeGray(currentTurnOf(snapshot))
+export function probeGraySession(snapshot: ConversationView): GrayProbe {
+  return probeGray(allReasoningBlocks(snapshot))
 }
 
-/** Empty probe (no reasoning in the current turn). */
+/** @deprecated Alias of {@link probeGraySession}. */
+export function probeGrayTurn(snapshot: ConversationView): GrayProbe {
+  return probeGraySession(snapshot)
+}
+
+/** Empty probe (no reasoning loaded). */
 export function emptyGrayProbe(): GrayProbe {
   return EMPTY_PROBE
 }

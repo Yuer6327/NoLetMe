@@ -20,7 +20,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatCount, type TrajectoryStats } from './stats.ts'
-import type { GrayProbe, GrayVerdict } from './graytest.ts'
+import type { GrayProbe } from './graytest.ts'
 import { GROUPS, PATTERNS, type Group, type Mode } from './keywords.ts'
 import type { HistoryState } from './session-store.ts'
 import type { NoLetMePanelProps } from './slots.ts'
@@ -405,93 +405,63 @@ function ReasoningAlert({ stats, t }: { stats: TrajectoryStats; t: NoLetMePanelP
   )
 }
 
-const GRAY_EVIDENCE_KEYS = [
-  'im-doing',
-  'im-doing-opener',
-  'no-let-me',
-  'summary-shape',
-  'chunked-blocks',
-  'dirty-token',
-  'backend-fp',
-] as const
-
-type GrayEvidenceKey = typeof GRAY_EVIDENCE_KEYS[number]
-
-function isGrayEvidenceKey(id: string): id is GrayEvidenceKey {
-  return (GRAY_EVIDENCE_KEYS as readonly string[]).includes(id)
+function pct(value: number): string {
+  return `${Math.round(value * 100)}%`
 }
 
-/** Current-turn gray-test verdict plus leaked fingerprints / dirty tokens. */
+function wordLen(value: number): string {
+  return value === 0 ? '0' : value.toFixed(1)
+}
+
+/** Session-wide gray-test verdict plus style numbers. No prose captions. */
 function GraySection({ gray, t }: { gray: GrayProbe; t: NoLetMePanelProps['t'] }) {
-  const verdict: GrayVerdict = gray.verdict
-  const hits = gray.evidence.filter(item => item.hit)
+  const profile = gray.profile !== 'none' && gray.verdict !== 'miss'
+    ? ` · ${t(`gray.profile.${gray.profile}` as 'gray.profile.im-doing' | 'gray.profile.summary' | 'gray.profile.fingerprint')}`
+    : ''
   return (
-    <section className={css.section} data-gray={verdict}>
+    <section className={css.section} data-gray={gray.verdict}>
       <div className={css.modeRow}>
         <h3 className={css.modeLabel}>{t('gray.label')}</h3>
-        <span className={css.grayBadge} data-gray={verdict}>
-          {t(`gray.${verdict}`)}
-          {gray.profile !== 'none' && verdict !== 'miss'
-            ? ` · ${t(`gray.profile.${gray.profile}` as 'gray.profile.im-doing' | 'gray.profile.summary' | 'gray.profile.fingerprint')}`
-            : ''}
+        <span className={css.grayBadge} data-gray={gray.verdict}>
+          {t(`gray.${gray.verdict}`)}{profile}
         </span>
       </div>
-      {verdict === 'miss' ? (
-        <p className={css.empty}>{t('gray.none')}</p>
-      ) : (
-        <>
-          <div className={css.metrics}>
-            {gray.imDoing > 0 && (
-              <span className={css.metric}>
-                {t('gray.imDoing')} <b className={css.metricValue}>{gray.imDoing}</b>
-              </span>
-            )}
-            {gray.summaryScore > 0 && (
-              <span className={css.metric}>
-                {t('gray.summary')} <b className={css.metricValue}>{Math.round(gray.summaryScore * 100)}%</b>
-              </span>
-            )}
-            {gray.chunked && (
-              <span className={css.metric}>{t('gray.chunked')}</span>
-            )}
-          </div>
-          {gray.opener !== '' && (
-            <p className={css.grayOpener} title={gray.opener}>
-              {t('gray.opener')} · {gray.opener}
-            </p>
-          )}
-          {gray.dirtyTokens.length > 0 && (
-            <p className={css.grayFacts}>
-              {t('gray.dirty')}
-              {gray.dirtyTokens.map(token => (
-                <code className={css.grayCode} key={token}>{token}</code>
-              ))}
-            </p>
-          )}
-          {gray.fingerprints.length > 0 && (
-            <p className={css.grayFacts}>
-              {t('gray.fp')}
-              {gray.fingerprints.map(fp => (
-                <code className={css.grayCode} key={fp}>{fp}</code>
-              ))}
-            </p>
-          )}
-          <div className={css.patternList}>
-            {hits.map(item => (
-              <span className={css.patternItem} key={item.id}>
-                <span className={css.patternDot} data-gray={verdict} aria-hidden="true" />
-                <span className={css.patternKey}>
-                  {isGrayEvidenceKey(item.id) ? t(`gray.evidence.${item.id}`) : item.id}
-                </span>
-                {item.detail !== undefined && item.detail !== '' && (
-                  <span className={css.patternCount}>{item.detail}</span>
-                )}
-              </span>
-            ))}
-          </div>
-        </>
+      <div className={css.metrics}>
+        <span className={css.metric}>
+          {t('gray.imDoing')} <b className={css.metricValue}>{gray.imDoing}</b>
+        </span>
+        <span className={css.metric}>
+          {t('gray.list')} <b className={css.metricValue}>{pct(gray.style.listRatio)}</b>
+        </span>
+        <span className={css.metric}>
+          {t('gray.p50')} <b className={css.metricValue}>{gray.style.p50}</b>
+        </span>
+        <span className={css.metric}>
+          {t('gray.ttr')} <b className={css.metricValue}>{pct(gray.style.typeToken)}</b>
+        </span>
+      </div>
+      <div className={css.metrics}>
+        <span className={css.metric}>
+          {t('gray.avgWord')} <b className={css.metricValue}>{wordLen(gray.style.avgWordLen)}</b>
+        </span>
+        {gray.chunked && <span className={css.metric}>{t('gray.chunked')}</span>}
+      </div>
+      {gray.dirtyTokens.length > 0 && (
+        <p className={css.grayFacts}>
+          {t('gray.dirty')}
+          {gray.dirtyTokens.map(token => (
+            <code className={css.grayCode} key={token}>{token}</code>
+          ))}
+        </p>
       )}
-      <p className={css.grayHint}>{t('gray.hint')}</p>
+      {gray.fingerprints.length > 0 && (
+        <p className={css.grayFacts}>
+          {t('gray.fp')}
+          {gray.fingerprints.map(fp => (
+            <code className={css.grayCode} key={fp}>{fp}</code>
+          ))}
+        </p>
+      )}
     </section>
   )
 }

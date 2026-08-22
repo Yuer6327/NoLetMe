@@ -330,19 +330,11 @@
   color: var(--dsw-alias-label-tertiary);
 }
 
-.grayOpener,
 .grayFacts {
   margin: 0 0 6px;
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-primary);
-}
-
-.grayOpener {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--dsw-alias-label-secondary);
 }
 
 .grayCode {
@@ -355,13 +347,6 @@
   font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
   font-size: 11px;
   line-height: 18px;
-}
-
-.grayHint {
-  margin: 8px 0 0;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 .patternDot[data-gray='likely'] {

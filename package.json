@@ -1,6 +1,6 @@
 {
   "name": "dsh-noletme",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "NoLetMe — real-time reasoning-trajectory keyword stats for the DeepSeek Harness web chat. Tracks the We-need/Let's efficient trajectory vs the Let-me hesitant trajectory vs the The-user-wants neutral framing in the model's streaming reasoning blocks.",
   "type": "module",
   "main": "lib/index.js",

@@ -98,7 +98,7 @@ a route, or a checkpoint, and Flash shifts style without a score change. The
 panel is a diagnostic mirror of the agent's current reasoning style, not a
 model identity test.
 
-## Gray-test probe (current turn, independent of 0813)
+## Gray-test probe (all loaded reasoning, independent of 0813)
 
 The 0813 taxonomy above is **session-wide** and stays frozen (`KEYWORD_TAXONOMY_VERSION = 1`,
 `CLASSIFIER_VERSION = 1`). Community gray tests in 2026-06 (expert-mode Markdown CoT),
@@ -109,21 +109,35 @@ that the 0813 word list cannot see: `Let me` is often absent, `I'm doing` /
 leaks dirty tokens (`Nameeee`, `antml:thinking`) or backend strings
 (`fp_v4pro_20260812_prod`).
 
-NoLetMe therefore adds a second, current-turn-only probe (`graytest.ts`,
-`GRAYTEST_VERSION = 1`) that does **not** rewrite the 0813 classifier:
+NoLetMe therefore adds a second probe (`graytest.ts`, `GRAYTEST_VERSION = 2`)
+over **every loaded reasoning block** (finalized assistant nodes + in-flight
+partial). It does **not** rewrite the 0813 classifier.
+
+**Summary-shaped CoT** is the list/heading line ratio across *all* those
+blocks: a non-empty line counting as a list item if it starts with `-` / `*` /
+`•` / `1.` / `#`. Ratio ≥ 0.35 is a hit. Short paragraphs alone do **not**
+count — 0813 We-need blocks are also short — unless `I'm doing` is also
+present.
 
 | signal | why |
 |---|---|
 | `I'm doing` / `I am doing` (incl. jammed `I'mdoing`) | 08-19/08-20 gray fingerprint; 0813 GA reportedly never produced it |
-| opener is `I'm doing…` | stronger than a mid-block occurrence |
-| outline / list CoT (`-` / `1.` / `#` density) | 06 expert-mode + 07 “摘要形思维链” |
-| several mid-length reasoning blocks **and** another gray signal | community “段尾停顿、下一段突然一大段” — cadence is not in the snapshot, so this is supporting only |
+| latest-block opener is `I'm doing…` | stronger than a mid-block occurrence |
+| outline / list CoT (line density ≥ 35%) | 06 expert-mode + 07 “摘要形思维链” |
+| several mid-length reasoning blocks **and** another gray signal | community “段尾停顿” — cadence is not in the snapshot, so this is supporting only |
 | dirty tokens / `fp_…` strings | leaked in reasoning during 08-19 discussion; shown as details, not as identity |
 
 Scoring is conservative: a lone 0813 `Let me` / `We need` trajectory is a **miss**;
 `I'm doing` without `Let me` is a **hit**. The probe never counts `text` blocks.
-A gray hit does **not** prove routing (Claude / Fable / Qwen); it reports that
-this round matches the community gray cluster.
+A gray hit does **not** prove routing (Claude / Fable / Qwen).
+
+Alongside the verdict the probe always emits **style stats** (list ratio, p50
+block length, type-token ratio, mean word length). These are local, untrained
+descriptive numbers — not the trained ensemble in
+[Bitton & Bitton, arXiv:2503.01659](https://arxiv.org/abs/2503.01659) (“Detecting
+Stylistic Fingerprints of Large Language Models”), which needs three
+architectures, family-labelled corpora, and unanimous-vote calibration. That
+kind of model-family classifier does not belong in this browser plugin.
 
 ## Counting scope: reasoning blocks only
 
