@@ -16,6 +16,7 @@
  */
 
 import type { ConversationNodeView, ConversationView } from './conversation.ts'
+import { probeGrayTurn } from './graytest.ts'
 import {
   CLASSIFIER_VERSION, emptySessionCounts, foldBlock, toTrajectoryStats,
   type SessionCounts, type TrajectoryStats,
@@ -118,7 +119,12 @@ export class SessionStatsAccumulator {
         }
       }
     }
-    return toTrajectoryStats(live, snapshot.partial !== null, { textBlocks, textChars })
+    return toTrajectoryStats(
+      live,
+      snapshot.partial !== null,
+      { textBlocks, textChars },
+      probeGrayTurn(snapshot),
+    )
   }
 
   /** Whether the accumulator carries any folded data (drives cache reuse). */

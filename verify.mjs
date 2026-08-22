@@ -400,6 +400,96 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('anomaly: empty assistant → none', bare.anomaly, 'none')
 }
 
+// --- 12. Gray-test probe: current turn only; 0813 classifier stays unchanged ---
+{
+  const { probeGray, probeGrayTurn } = await import('./src/client/graytest.ts')
+  const { computeStats } = await import('./src/client/stats.ts')
+  const { PATTERNS } = await import('./src/client/keywords.ts')
+
+  const imDoing = probeGray([{
+    kind: 'reasoning',
+    text: "I'm doing the raft survival game now.\nI'm doing the inventory next.",
+  }])
+  check('gray: I\'m doing → likely', imDoing.verdict, 'likely')
+  check('gray: I\'m doing profile', imDoing.profile, 'im-doing')
+  check('gray: I\'m doing count', imDoing.imDoing, 2)
+  check('gray: opener captured', imDoing.opener.startsWith("I'm doing"), true)
+
+  const jammed = probeGray([{ kind: 'reasoning', text: "I'mdoing the next step of the build." }])
+  check('gray: jammed I\'mdoing still counts', jammed.imDoing, 1)
+
+  const summary = probeGray([{
+    kind: 'reasoning',
+    text: ['# Plan', '- inventory', '- build raft', '- shark AI', '- island map'].join('\n'),
+  }])
+  check('gray: outline-only → possible', summary.verdict, 'possible')
+  check('gray: outline profile', summary.profile, 'summary')
+
+  const dirty = probeGray([{
+    kind: 'reasoning',
+    text: 'Need a Nameeee check. fp_v4pro_20260812_prod leaked in the chain.',
+  }])
+  check('gray: dirty token listed', dirty.dirtyTokens.includes('Nameeee'), true)
+  check('gray: backend fp listed', dirty.fingerprints.some(fp => fp.startsWith('fp_v4pro_')), true)
+  check('gray: leaked-fp profile', dirty.profile, 'fingerprint')
+  check('gray: leaked-fp at least possible', dirty.verdict === 'possible' || dirty.verdict === 'likely', true)
+
+  const standard = probeGray([{
+    kind: 'reasoning',
+    text: 'The user wants a fix. Let me check the logs. Let me try another approach.',
+  }])
+  check('gray: 0813 let-me is a miss', standard.verdict, 'miss')
+
+  const minimal = probeGray([{
+    kind: 'reasoning',
+    text: 'We need to inspect the layout. We should run tests. We can then patch the script. Let\'s move.',
+  }])
+  check('gray: 0813 we-need is a miss', minimal.verdict, 'miss')
+
+  const manyBlocks = probeGray([
+    { kind: 'reasoning', text: 'We need to inspect the project layout carefully before touching anything.' },
+    { kind: 'reasoning', text: 'We should run the tests to confirm nothing broke in the last patch.' },
+    { kind: 'reasoning', text: 'We can then open the editor to patch the build script if needed.' },
+  ])
+  check('gray: 0813 multi-block we-need is still a miss', manyBlocks.verdict, 'miss')
+
+  const snap = computeStats({
+    sessionId: 'g1',
+    nodes: [{
+      kind: 'assistant', seq: 1,
+      blocks: [{ kind: 'reasoning', text: 'Let me think about the old turn.' }],
+    }],
+    partial: { blocks: [{ kind: 'reasoning', text: "I'm doing the current turn now." }] },
+    openState: 'open',
+    hasMore: false,
+    loadingOlder: false,
+  })
+  check('gray: 0813 session mode still hesitant', snap.mode, 'hesitant')
+  check('gray: current-turn probe uses partial', snap.gray.verdict, 'likely')
+  check('gray: current-turn ignores prior let-me', snap.gray.imDoing, 1)
+  check('gray: 0813 letMe still counted session-wide', snap.words.letMe, 1)
+  const letMeIdx = PATTERNS.findIndex(p => p.label === 'pattern.letMe')
+  check('gray: 0813 pattern table length unchanged', PATTERNS.length, 24)
+  check('gray: 0813 let-me pattern still present', letMeIdx >= 0, true)
+
+  const turn = probeGrayTurn({
+    sessionId: 'g2',
+    nodes: [{
+      kind: 'assistant', seq: 2,
+      blocks: [{ kind: 'reasoning', text: "I'm doing a finalized last turn." }],
+    }],
+    partial: null,
+    openState: 'open',
+    hasMore: false,
+    loadingOlder: false,
+  })
+  check('gray: finalized last assistant is the current turn', turn.verdict, 'likely')
+
+  const empty = probeGray([{ kind: 'text', text: "I'm doing this in visible text." }])
+  check('gray: text blocks are never probed', empty.verdict, 'miss')
+  check('gray: text I\'m doing not counted', empty.imDoing, 0)
+}
+
 console.log(failures === 0 ? '\nAll checks passed ✓' : `\n${failures} check(s) FAILED ✗`)
 // Let pending dynamic-import module jobs settle before exiting (avoids a
 // Windows libuv teardown race that otherwise asserts in win/async.c).

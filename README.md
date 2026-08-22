@@ -15,6 +15,8 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 | 🟠 犹豫 · 第一人称试探 | `Let me…` `I think…` `I'm not sure…` `I wonder…` `I guess…` `maybe` `perhaps` | standard 类低分轨迹 |
 | ⚪ 中性 · 复述任务 | `The user wants…` `The user asked…` `this task…` `the request…` | Standard 目录开场框架 |
 
+**本轮灰测**是另一层、不改 0813 词表：只看当前这一轮（流式 `partial`，否则最后一条助手消息）是否抽中社区灰测后端。综合 2026-06 专家模式、2026-07 Web 摘要 CoT、以及 2026-08-19/08-20 V4 Pro 回流的观测特征——`I'm doing` / `I am doing`、概要/条目形思维链、多段推理块、脏 token（`Nameeee`、`antml:thinking`…）、泄漏的 `fp_v4pro_…` 串——给出未命中 / 疑似 / 命中，并列出开场句与证据。这仍是**观测性指纹**，不是路由或身份实锤。
+
 面板是原生融入的悬浮层：复用 harness 设计系统（`--dsw-alias-*` 语义令牌、DetailsPanel 头/体结构、CSS Modules、明暗与 reduced-motion），通过官方 `shell.overlay` 插槽挂载，不改动、不补丁任何既有 UI。
 
 ## 证据链
@@ -38,7 +40,7 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 **分类器**：仓库自带精确词法规则（[`evaluator/trigger_probe/src/classifier.mjs`](https://github.com/xiaobright/modeltest/blob/main/evaluator/trigger_probe/src/classifier.mjs)），NoLetMe 逐条镜像：首行 `We need` → minimal 类；有 `we` 无 `let me` → +2；出现任何 `let me` → standard 类；独立首行 `Good.`/`Great.`/`Excellent.` → +1。⚪ 中性类覆盖其余 `ambiguous`（模糊）及复述框架 —— Standard 目录开场 `The user wants … Let me …`（见 [`DEEPSEEK_V4_TRIGGER_MECHANISM_EXPERIMENTS_20260814.md`](https://github.com/xiaobright/modeltest/blob/main/docs/v4.1/DEEPSEEK_V4_TRIGGER_MECHANISM_EXPERIMENTS_20260814.md)），外加通用任务描述词汇。
 
-**诚实边界**：原始矩阵原文警告：*"词法轨迹标签是观测性指纹，而非路由或身份标签。"* 词频只反映推理*风格*，不能判定后端、路由或 checkpoint；V4 Flash 会在分数不变时改变风格。NoLetMe 是推理风格诊断工具，不是模型身份测试。
+**诚实边界**：原始矩阵原文警告：*"词法轨迹标签是观测性指纹，而非路由或身份标签。"* 词频只反映推理*风格*，不能判定后端、路由或 checkpoint；V4 Flash 会在分数不变时改变风格。本轮灰测探针同样只报告社区观测到的特征组合，**不能**据此断言路由到了哪家模型。NoLetMe 是推理风格诊断工具，不是模型身份测试。
 
 完整事件报告见 [`docs/research.md`](docs/research.md)。
 
@@ -89,12 +91,12 @@ dsh web --patch 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe/cordis.patch.y
 ## 使用
 
 - 面板停靠于会话标题栏下方右上角（避开「Session log」下载按钮），浮在对话框上。
-- **折叠**时是圆角胶囊（圆点 + "NoLetMe" + 当前模式），点击展开成卡片。**展开**后显示：实时状态条（流式/同步圆点、推理块数/字符数、可见回复）、轨迹模式徽章、各类占比条、原始指标（`we · let's · let me · I`）、关键词明细，以及犹豫压力健康提示。
+- **折叠**时是圆角胶囊（圆点 + "NoLetMe" + 当前模式；本轮抽中灰测时改为「命中/疑似」），点击展开成卡片。**展开**后显示：实时状态条（流式/同步圆点、推理块数/字符数、可见回复）、**本轮灰测**（开场句、`I'm doing` 次数、概要形、脏 token、后端 `fp_`）、轨迹模式徽章、各类占比条、原始指标（`we · let's · let me · I`）、关键词明细，以及犹豫压力健康提示。
 - 胶囊↔卡片是同一表面的临界阻尼弹簧形变（可打断、锚定右 dock），`prefers-reduced-motion` 下降级为瞬时切换；开合状态会被记住。
 
 ### 数据口径、持久化与隐私
 
-- **只统计推理，与证据一致**：关键词只对**推理块**计数，与 `analyze_trajectory_exports.py` 的范围完全一致。若模型几乎全部以可见文本输出、推理块很少，面板会显示**推理健康告警**（附原始 reasoning/text 计数），而不是凭空拿文本造数。
+- **只统计推理，与证据一致**：关键词只对**推理块**计数，与 `analyze_trajectory_exports.py` 的范围完全一致。若模型几乎全部以可见文本输出、推理块很少，面板会显示**推理健康告警**（附原始 reasoning/text 计数），而不是凭空拿文本造数。灰测探针同样只扫 reasoning，且只看**当前轮**，会话级 0813 分类器保持原样。
 - **实时**：每个流式推理增量做增量折叠（每帧至多一次），从不整段重扫会话。
 - **切换会话**：立即用本地缓存重绘新会话统计，再翻页载入**完整历史**（期间显示「同步中」指示）。
 - **本地持久化**：每个会话的折叠计数存于 `localStorage`（`dsh-noletme.stats.<sessionId>`），重开会话不重新计数，只折叠新增消息。
@@ -130,8 +132,9 @@ src/
     ├── session-source.ts # 当前会话 ConversationView 可观察源
     ├── session-store.ts  # 统计 store：实时折叠、全历史翻页、持久化
     ├── accumulator.ts  # 每会话增量折叠 + 压缩 + 序列化
-    ├── keywords.ts     # 有研究依据的关键词表
+    ├── keywords.ts     # 有研究依据的 0813 关键词表
     ├── stats.ts        # 计数引擎（最长匹配遍历、按块缓存）
+    ├── graytest.ts     # 本轮灰测探针（I'm doing / 概要形 / 脏 token / fp_）
     ├── NoLetMePanel.tsx / .module.css
     └── locales.ts      # zh + en 词典
 ```

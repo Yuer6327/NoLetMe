@@ -98,6 +98,33 @@ a route, or a checkpoint, and Flash shifts style without a score change. The
 panel is a diagnostic mirror of the agent's current reasoning style, not a
 model identity test.
 
+## Gray-test probe (current turn, independent of 0813)
+
+The 0813 taxonomy above is **session-wide** and stays frozen (`KEYWORD_TAXONOMY_VERSION = 1`,
+`CLASSIFIER_VERSION = 1`). Community gray tests in 2026-06 (expert-mode Markdown CoT),
+2026-07 (Web “summary” / 一段一段的总结性 CoT), and 2026-08-19/08-20 (V4 Pro
+`I'm doing` reruns on dsh Standard + web Chat) use a **different** fingerprint
+that the 0813 word list cannot see: `Let me` is often absent, `I'm doing` /
+`I am doing` returns, CoT is outline-shaped or chunked, and reasoning sometimes
+leaks dirty tokens (`Nameeee`, `antml:thinking`) or backend strings
+(`fp_v4pro_20260812_prod`).
+
+NoLetMe therefore adds a second, current-turn-only probe (`graytest.ts`,
+`GRAYTEST_VERSION = 1`) that does **not** rewrite the 0813 classifier:
+
+| signal | why |
+|---|---|
+| `I'm doing` / `I am doing` (incl. jammed `I'mdoing`) | 08-19/08-20 gray fingerprint; 0813 GA reportedly never produced it |
+| opener is `I'm doing…` | stronger than a mid-block occurrence |
+| outline / list CoT (`-` / `1.` / `#` density) | 06 expert-mode + 07 “摘要形思维链” |
+| several mid-length reasoning blocks **and** another gray signal | community “段尾停顿、下一段突然一大段” — cadence is not in the snapshot, so this is supporting only |
+| dirty tokens / `fp_…` strings | leaked in reasoning during 08-19 discussion; shown as details, not as identity |
+
+Scoring is conservative: a lone 0813 `Let me` / `We need` trajectory is a **miss**;
+`I'm doing` without `Let me` is a **hit**. The probe never counts `text` blocks.
+A gray hit does **not** prove routing (Claude / Fable / Qwen); it reports that
+this round matches the community gray cluster.
+
 ## Counting scope: reasoning blocks only
 
 `evaluator/trajectory_evidence/analyze_trajectory_exports.py` counts the

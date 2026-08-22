@@ -20,6 +20,12 @@ export type {
   BlockCounts, PatternCounts, ReasoningAnomaly, SessionCounts, TrajectoryStats, WordCounts,
 } from './stats.ts'
 export {
+  GRAYTEST_VERSION, currentTurnOf, emptyGrayProbe, probeGray, probeGrayTurn,
+} from './graytest.ts'
+export type {
+  GrayEvidence, GrayProbe, GrayProfile, GrayVerdict,
+} from './graytest.ts'
+export {
   EFFICIENT_PATTERNS, GROUPS, HESITANT_PATTERNS, KEYWORD_TAXONOMY_VERSION, NEUTRAL_PATTERNS, PATTERNS,
 } from './keywords.ts'
 export type { Group, KeywordPattern, Mode } from './keywords.ts'
