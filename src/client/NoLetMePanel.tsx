@@ -405,6 +405,9 @@ function ReasoningAlert({ stats, t }: { stats: TrajectoryStats; t: NoLetMePanelP
   )
 }
 
+/** GitHub README section that documents the gray-test scoring rules. */
+const GRAY_DOCS_HREF = 'https://github.com/Yuer6327/NoLetMe#gray-test'
+
 function pct(value: number): string {
   return `${Math.round(value * 100)}%`
 }
@@ -425,6 +428,16 @@ function GraySection({ gray, t }: { gray: GrayProbe; t: NoLetMePanelProps['t'] }
         <span className={css.grayBadge} data-gray={gray.verdict}>
           {t(`gray.${gray.verdict}`)}{profile}
         </span>
+        <a
+          className={css.grayDocs}
+          href={GRAY_DOCS_HREF}
+          target="_blank"
+          rel="noreferrer"
+          title={t('gray.docs')}
+          aria-label={t('gray.docs')}
+        >
+          ?
+        </a>
       </div>
       <div className={css.metrics}>
         <span className={css.metric}>

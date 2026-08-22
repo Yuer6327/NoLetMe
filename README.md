@@ -15,11 +15,7 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 | 🟠 犹豫 · 第一人称试探 | `Let me…` `I think…` `I'm not sure…` `I wonder…` `I guess…` `maybe` `perhaps` | standard 类低分轨迹 |
 | ⚪ 中性 · 复述任务 | `The user wants…` `The user asked…` `this task…` `the request…` | Standard 目录开场框架 |
 
-**灰测**是另一层、不改 0813 词表：对**已加载的全部 reasoning 块**（含历史与当前流式 `partial`）做观测性判定，不是只看最近一轮。
-
-**概要式怎么判**：非空行里，列表/标题行（`-` / `*` / `1.` / `#`）占比 ≥ 35% 记为概要形；短段落 alone 不够（0813 的 We-need 块也短），必须再叠 `I'm doing`。其它加分项：`I'm doing` / `I am doing`（含 `I'mdoing`）、开场即 `I'm doing`、脏 token（`Nameeee`、`antml:thinking`…）、泄漏的 `fp_v4pro_…`。纯 `Let me` / `We need` 减分。`score ≥ 5` 命中，`≥ 2` 疑似。面板同时给出完整风格数字：列表密度、块长 p50、TTR、词长——**未命中时也显示**，不当作家谱鉴定。
-
-这仍是观测性指纹，不是路由实锤。面板 UI 只报数字与命中态，方法说明只写在本 README / `docs/research.md`。
+**灰测**是另一层、不改 0813 词表。面板只报命中态与数字；完整判定规则见 [灰测如何判定](#gray-test)。
 
 面板是原生融入的悬浮层：复用 harness 设计系统（`--dsw-alias-*` 语义令牌、DetailsPanel 头/体结构、CSS Modules、明暗与 reduced-motion），通过官方 `shell.overlay` 插槽挂载，不改动、不补丁任何既有 UI。
 
@@ -49,6 +45,77 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 文献上的「LLM 风格指纹」分类器（例如 [Bitton & Bitton, arXiv:2503.01659](https://arxiv.org/abs/2503.01659) 的三分类器集成，或 Attestify 一类需训练语料的统计指纹）需要离线权重与校准集，**不适合塞进这个浏览器插件**。NoLetMe 只保留能本地、无模型地从 reasoning 算出的统计：列表密度、块长 p50、TTR、平均词长，作为灰测旁的完整数据，而不是把会话贴上 Claude/Gemini/GPT 标签。
 
 完整事件报告见 [`docs/research.md`](docs/research.md)。
+
+## <a id="gray-test"></a>灰测如何判定
+
+面板「灰测」一行（未命中 / 疑似 / 命中）的规则写在这里。实现：[`src/client/graytest.ts`](src/client/graytest.ts)，`GRAYTEST_VERSION = 2`。0813 词表（`We need` / `Let me` / `The user wants`）**完全不动**。
+
+### 扫什么
+
+对**已加载会话里的全部 reasoning 块**计分：
+
+1. 已翻页进来的历史 `assistant` 节点，按 `seq` 顺序；
+2. 当前流式 `partial`（如果有）。
+
+与 0813 折叠同一窗口：还没 `loadOlder` 进来的更早历史不参与。`kind !== 'reasoning'` 的块（可见 `text`、工具调用等）**一律不算**——正文里的 `I'm doing` 也不算。
+
+### 概要式（summary-shaped CoT）
+
+社区 2026-06 专家模式、2026-07 Web「摘要形 / 一段一段的总结性」灰测的结构指纹。
+
+对上述全部 reasoning 文本按空行切开，丢掉空行后：
+
+- **列表/标题行**：行首匹配 `-` / `*` / `•` / `1.` / `1)` / `#`–`###`；
+- **列表密度** `listRatio` = 这类行数 / 非空行数。
+
+判定：
+
+| 条件 | 结果 |
+|---|---|
+| `listRatio ≥ 0.35` | 概要形成立，**+2** |
+| 非空行 ≥ 3 且平均行长 < 140，**并且**已有 `I'm doing` | 也算概要形，**+2**（不与上一行叠两次） |
+| 只有短段落、没有 `I'm doing` | **不算**。0813 的 We-need 块同样短，不能单凭短就当灰测 |
+
+### 其它加分 / 减分
+
+| 信号 | 分 | 说明 |
+|---|---:|---|
+| `I'm doing` / `I am doing` / 粘连的 `I'mdoing`（大小写不敏感）出现 ≥ 1 | **+4** | 2026-08-19/08-20 社区主指纹；0813 GA 据称没有 |
+| **最新一块** reasoning 的首行就是 `I'm doing…` | **+2** | 比块中出现更强 |
+| 有 `I'm doing` 且全程 `let me` = 0 | **+1** | 08-19 灰测常缺 Let me |
+| 概要形（上一节） | **+2** | |
+| 脏 token：`Nameeee`、`antml:thinking`、`<antml`、`EDMFunc`、`everydaycalculation` | **+2** | 08-19 讨论里从 reasoning 漏出 |
+| 后端串：`fp_…` / `fp_v4pro_…`（如 `fp_v4pro_20260812_prod`） | **+2** | 泄漏的部署指纹，当细节不是身份 |
+| ≥ 3 块、块长中位数 30–800，**并且**上面已有任一灰测信号 | **+1** | 社区「段尾停顿、下一段突然一大段」。快照没有时间戳，多块也是 0813 存长轨迹的方式，故只作加分 |
+| `let me` ≥ 2 且 `I'm doing` = 0 | **−3** | 典型 0813 Standard / 犹豫轨迹 |
+| 裸 `we` ≥ 3、无 `I'm doing`、非概要形 | **−1** | 典型 0813 Minimal |
+
+### 阈值与家族
+
+`score ≥ 5` → **命中**；`≥ 2` → **疑似**；否则 **未命中**。
+
+展示用家族（不改变分数）：有 `I'm doing` → `I'm doing`；否则有脏 token / `fp_` → 指纹；否则概要形成立 → 概要式；否则 —。
+
+### 面板上的数字（命中与否都显示）
+
+这些是本地、无模型的描述统计，**不是**把会话贴上 Claude / Gemini / GPT 标签：
+
+| 字段 | 含义 |
+|---|---|
+| I'm doing | 全部 reasoning 里该短语出现次数 |
+| 列表密度 | 上一节的 `listRatio` |
+| p50 | reasoning 块字符数的中位数 |
+| TTR | 小写分词后的 type-token ratio |
+| 词长 | 字母 token 的平均长度 |
+| 脏 token / fp | 仅当扫到时显示原文 |
+
+文献上的家谱鉴定（[Bitton & Bitton, arXiv:2503.01659](https://arxiv.org/abs/2503.01659) 三分类器集成、Attestify 一类需训练语料的统计指纹）要离线权重和校准集，**不进这个浏览器插件**。
+
+### 诚实边界
+
+灰测命中只表示「已加载的 reasoning 像社区灰测簇」，**不能**据此断言路由到了哪家模型、哪个 checkpoint、哪台机器。词法标签是观测性指纹，不是身份。V4 Flash 也会在分数不变时改风格。
+
+更短的矩阵与 0813 对照见 [`docs/research.md`](docs/research.md)。
 
 ## 安装
 
@@ -97,7 +164,7 @@ dsh web --patch 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe/cordis.patch.y
 ## 使用
 
 - 面板停靠于会话标题栏下方右上角（避开「Session log」下载按钮），浮在对话框上。
-- **折叠**时是圆角胶囊（圆点 + "NoLetMe" + 模式；灰测命中/疑似时改显示该态）。**展开**后：状态条、灰测（命中态 + `I'm doing` / 列表密度 / p50 / TTR / 词长，以及脏 token、`fp_`）、轨迹模式、占比条、`we · let's · let me · I`、关键词明细、犹豫压力。方法说明不进面板。
+- **折叠**时是圆角胶囊（圆点 + "NoLetMe" + 模式；灰测命中/疑似时改显示该态）。**展开**后：状态条、灰测（命中态后有指向本 README [灰测如何判定](#gray-test) 的 `?` 链接，数字始终显示）、轨迹模式、占比条、`we · let's · let me · I`、关键词明细、犹豫压力。方法说明不进面板。
 - 胶囊↔卡片是同一表面的临界阻尼弹簧形变（可打断、锚定右 dock），`prefers-reduced-motion` 下降级为瞬时切换；开合状态会被记住。
 
 ### 数据口径、持久化与隐私
