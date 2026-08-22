@@ -46,7 +46,7 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 ## 安装
 
-**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8、0.1.1-rc.1 以及之后的 0.1 更新**。更早的 rc 版本未保证兼容。
+**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8、0.1.1-rc.1、0.1.1-rc.2 以及之后的 0.1 更新**。更早的 rc 版本未保证兼容。
 
 **方式一 · npm 安装（推荐）** —— `dsh-noletme` 已发布到 npm，预构建安装，无需 `allowBuilds` 审批
 
@@ -111,9 +111,9 @@ pnpm typecheck    # 可选；tsc --noEmit
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/client.js（浏览器包）
 ```
 
-客户端依赖（`@deepseek-ai/dsh-client-*`）声明为 `>=0.1.0-rc.7 <0.2.0 || >=0.1.1-rc.1 <0.2.0`，覆盖 rc.7、rc.8、0.1.1-rc.x 以及后续 0.1.x（semver 的 prerelease 比较器只匹配同 `[major,minor,patch]` 元组，`0.1.1-rc.1` 落在 `0.1.0` 的范围外，故需第二个分支）。浏览器包只 `require` rc.7∩rc.8∩0.1.1-rc.1 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；会话快照按结构子集读取（顶层 `nodes`/`partial`，必要时回退 `chat.legacy`），不把 runtime 打进冻结模块表。
+客户端依赖（`@deepseek-ai/dsh-client-*`）声明为 `>=0.1.0-rc.7 <0.2.0 || >=0.1.1-rc.1 <0.2.0`，覆盖 rc.7、rc.8、0.1.1-rc.x 以及后续 0.1.x（semver 的 prerelease 比较器只匹配同 `[major,minor,patch]` 元组，`0.1.1-rc.1` 落在 `0.1.0` 的范围外，故需第二个分支）。dev 锁在 **0.1.1-rc.2**。浏览器包只 `require` rc.7∩rc.8∩0.1.1-rc.1∩0.1.1-rc.2 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；会话快照按结构子集读取（顶层 `nodes`/`partial`，必要时回退 `chat.legacy`），不把 runtime 打进冻结模块表。
 
-> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（`@deepseek-ai/dsh` 的 `latest` 仍可能是 rc.7，而 `next` 已是 0.1.1-rc.1）。升级依赖时请显式写上面的范围或具体 rc，**不要用 `@latest`**。
+> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（client 包 `latest` 仍可能是 `0.0.1-rc.1`，而 `@deepseek-ai/dsh` 的 `latest`/`next` 现为 0.1.1-rc.2）。升级依赖时请显式写上面的范围或具体 rc，**不要用 `@latest`**。
 
 > dsh CLI 升级后无需重装 profile：基底包（`dsh-base`、`dsh-web-app` 等）按"安装优先"从 CLI 自身解析，profile 里的行会自动跟到新版本。
 

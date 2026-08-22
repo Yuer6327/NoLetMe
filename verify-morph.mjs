@@ -7,7 +7,9 @@
  * Usage: node verify-morph.mjs <app-url>
  */
 
-import { writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 const APP_URL = process.argv[2] ?? 'http://127.0.0.1:3100/'
 const DEBUG = process.env.CDP_PORT ? 'http://127.0.0.1:' + process.env.CDP_PORT : 'http://127.0.0.1:9223'
@@ -43,17 +45,28 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 async function main() {
   const list = await (await fetch(`${DEBUG}/json/list`)).json()
-  let target = list.find(t => t.type === 'page')
+  const appOrigin = new URL(APP_URL).origin
+  let target = list.find(t => t.type === 'page' && typeof t.url === 'string' && t.url.startsWith(appOrigin))
   if (!target) {
     target = await (await fetch(`${DEBUG}/json/new?${encodeURIComponent(APP_URL)}`, { method: 'PUT' })).json()
   }
+  console.log('cdp target:', target.url)
   const cdp = await Cdp.connect(target.webSocketDebuggerUrl)
   cdp.listen()
 
   const errors = []
+  const hostNoise = /syncing inspect providers failed|reading the Cordis inventory failed|Failed to fetch/
   cdp.handler = (m) => {
-    if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text)
-    if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push('console.error')
+    if (m.method === 'Runtime.exceptionThrown') {
+      const text = m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text
+      if (hostNoise.test(text) && !/noletme|NoLetMe/i.test(text)) return
+      errors.push(text)
+    }
+    if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') {
+      const text = (m.params.args ?? []).map(a => a.value ?? a.description ?? '').join(' ')
+      if (hostNoise.test(text) && !/noletme|NoLetMe/i.test(text)) return
+      errors.push(text || 'console.error')
+    }
   }
 
   await cdp.send('Page.enable')
@@ -99,7 +112,9 @@ async function main() {
     return { w: Math.round(r.width), h: Math.round(r.height), pillVis: getComputedStyle(pill).visibility, pillOpacity: getComputedStyle(pill).opacity, radius: getComputedStyle(root).borderRadius };
   })()`)
   console.log('collapsed chip root box:', JSON.stringify(pillBox))
-  await cdp.send('Page.captureScreenshot', { format: 'png' }).then(r => { writeFileSync('/tmp/noletme-pill.png', Buffer.from(r.data, 'base64')) })
+  const shotDir = join(tmpdir(), 'noletme-verify')
+  mkdirSync(shotDir, { recursive: true })
+  await cdp.send('Page.captureScreenshot', { format: 'png' }).then(r => { writeFileSync(join(shotDir, 'noletme-pill.png'), Buffer.from(r.data, 'base64')) })
 
   // Expand: click the pill.
   await evalJs(`(() => {
@@ -116,7 +131,7 @@ async function main() {
     return { w: Math.round(r.width), h: Math.round(r.height) };
   })()`)
   console.log('re-expanded card root box:', JSON.stringify(cardBox))
-  await cdp.send('Page.captureScreenshot', { format: 'png' }).then(r => { writeFileSync('/tmp/noletme-card.png', Buffer.from(r.data, 'base64')) })
+  await cdp.send('Page.captureScreenshot', { format: 'png' }).then(r => { writeFileSync(join(shotDir, 'noletme-card.png'), Buffer.from(r.data, 'base64')) })
 
   const pillIsPill = pillBox && pillBox.w < 170 && pillBox.h <= 42
   const chipRoundedRect = pillBox && pillBox.radius !== '999px' && Number.parseInt(pillBox.radius, 10) < 30

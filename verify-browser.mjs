@@ -53,23 +53,31 @@ async function main() {
   console.log('browser:', version.Browser)
 
   let targets = await (await fetch(`${DEBUG}/json/list`)).json()
-  let target = targets.find(t => t.type === 'page')
+  const appOrigin = new URL(APP_URL).origin
+  let target = targets.find(t => t.type === 'page' && typeof t.url === 'string' && t.url.startsWith(appOrigin))
   if (!target) {
     const created = await fetch(`${DEBUG}/json/new?${encodeURIComponent(APP_URL)}`, { method: 'PUT' })
     target = await created.json()
   }
+  console.log('cdp target:', target.url)
 
   const cdp = await CdpClient.connect(target.webSocketDebuggerUrl)
   cdp.listen()
 
   const consoleErrors = []
+  const hostNoise = /syncing inspect providers failed|reading the Cordis inventory failed|Failed to fetch/
+  const isPluginNoise = (text) => hostNoise.test(text) && !/noletme|NoLetMe/i.test(text)
   cdp.on((msg) => {
     if (msg.method === 'Runtime.exceptionThrown') {
       const d = msg.params.exceptionDetails
-      consoleErrors.push(`EXCEPTION: ${d.exception?.description ?? d.text}`)
+      const text = `EXCEPTION: ${d.exception?.description ?? d.text}`
+      if (!isPluginNoise(text)) consoleErrors.push(text)
+      else console.log('ignored host noise:', text.split('\n')[0])
     }
     if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error') {
-      consoleErrors.push(`CONSOLE.ERROR: ${msg.params.args?.map(a => a.value ?? a.description ?? '').join(' ')}`)
+      const text = `CONSOLE.ERROR: ${msg.params.args?.map(a => a.value ?? a.description ?? '').join(' ')}`
+      if (!isPluginNoise(text)) consoleErrors.push(text)
+      else console.log('ignored host noise:', text.split('\n')[0])
     }
   })
 
