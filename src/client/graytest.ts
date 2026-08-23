@@ -108,9 +108,14 @@ export interface GrayProbe {
   readonly dirtyTokens: readonly string[]
   /** Distinct `fp_…` backend fingerprint strings in any turn. */
   readonly fingerprints: readonly string[]
-  /** Slow-TTFT seen in at least one turn (network-sensitive; +1 max per turn). */
+  /** Slow-TTFT seen in at least one turn against the session's dynamic line. */
   readonly slowTtft: boolean
   readonly style: StyleStats
+  /**
+   * Session network estimate behind the dynamic TTFT line (median/p90 TTFT,
+   * stream chars/s). Shown so the user can judge the link themselves.
+   */
+  readonly network: NetworkProfile
   /** Per-turn probes, oldest first; the last entry may be the live partial. */
   readonly turns: readonly TurnProbe[]
 }
@@ -133,6 +138,15 @@ const EMPTY_STYLE: StyleStats = {
   avgWordLen: 0,
 }
 
+/** No-timing fallback used until ≥ 2 timed turns establish a session line. */
+const EMPTY_NETWORK: NetworkProfile = {
+  samples: 0,
+  ttftBaseline: null,
+  ttftSpread: null,
+  streamCharsPerSec: null,
+  slowLineMs: null,
+}
+
 const EMPTY_PROBE: GrayProbe = {
   verdict: 'miss',
   confidence: 0,
@@ -145,6 +159,7 @@ const EMPTY_PROBE: GrayProbe = {
   fingerprints: [],
   slowTtft: false,
   style: EMPTY_STYLE,
+  network: EMPTY_NETWORK,
   turns: [],
 }
 
@@ -243,12 +258,91 @@ export function isSlowTtft(timing: TurnTiming): boolean {
 }
 
 /**
+ * Network-quality estimate for one session, from the turn timings themselves.
+ *
+ * A raw TTFT mixes queueing + network + model latency, so a fixed threshold
+ * misfires on slow links. Instead the session's own turns provide the
+ * baseline:
+ *
+ *  - `ttftBaseline` — median TTFT across timed turns (the link's floor);
+ *  - `ttftSpread` — p90/p50 ratio (how bursty latencies are);
+ *  - `streamCharsPerSec` — completedTime−firstTokenTime over reasoning chars
+ *    (delivery speed; a slow *link* throttles this too).
+ *
+ * `slowLineMs` is then a dynamic line: max(baseline + 3 s, baseline × 2),
+ * floored at 2.5 s and capped at 60 s. A uniformly slow link raises its own
+ * baseline instead of flagging every turn; a fast link keeps a tight line and
+ * still catches multi-second stalls.
+ */
+export interface NetworkProfile {
+  /** Timed turns used for the estimate (0 → no data). */
+  readonly samples: number
+  /** Median TTFT in ms; null without samples. */
+  readonly ttftBaseline: number | null
+  /** p90 TTFT ÷ p50 TTFT; 1 when all equal; null without samples. */
+  readonly ttftSpread: number | null
+  /** Reasoning chars per second during streaming (median of timed turns). */
+  readonly streamCharsPerSec: number | null
+  /** Dynamic slow-TTFT line for this session, ms; null without samples. */
+  readonly slowLineMs: number | null
+}
+
+function percentile(values: readonly number[], fraction: number): number {
+  if (values.length === 0) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))
+  return sorted[index]
+}
+
+/** Derive the session's network profile and its dynamic slow-TTFT line. */
+export function networkProfileOf(timings: readonly TurnTiming[]): NetworkProfile {
+  const timed = timings.filter((t): t is TurnTiming & { ttftMs: number } =>
+    t.ttftMs !== null && t.ttftMs >= 0)
+  if (timed.length === 0) return EMPTY_NETWORK
+
+  const ttfts = timed.map(t => t.ttftMs as number)
+  const p50 = percentile(ttfts, 0.5)
+  const p90 = percentile(ttfts, 0.9)
+
+  const streams = timed
+    .map(t => {
+      const streamMs = t.streamMs
+      const chars = t.chars
+      return streamMs !== null && streamMs > 250 ? chars / (streamMs / 1000) : null
+    })
+    .filter((value): value is number => value !== null)
+  const streamCharsPerSec = streams.length === 0 ? null : percentile(streams, 0.5)
+
+  // Spread widens the line on jittery links; a stable fast link keeps it tight.
+  const spread = p50 > 0 ? p90 / p50 : 1
+  const slowLineMs = Math.round(Math.min(60_000, Math.max(2_500, Math.max(p50 + 3_000, p50 * 2 * spread))))
+
+  return {
+    samples: timed.length,
+    ttftBaseline: Math.round(p50),
+    ttftSpread: Math.round(spread * 100) / 100,
+    streamCharsPerSec: streamCharsPerSec === null ? null : Math.round(streamCharsPerSec),
+    slowLineMs,
+  }
+}
+
+/**
+ * Slow-TTFT verdict against a session-derived line. Falls back to the static
+ * rule when no baseline exists yet.
+ */
+export function isSlowTtftAgainst(timing: TurnTiming, profile: NetworkProfile): boolean {
+  if (timing.ttftMs === null) return false
+  if (profile.slowLineMs === null || profile.samples < 2) return isSlowTtft(timing)
+  return timing.ttftMs >= profile.slowLineMs
+}
+
+/**
  * Score one bag of reasoning blocks with optional timing. Pure — used by the
  * per-turn fold and by tests.
  */
 export function scoreTurn(
   texts: readonly string[],
-  options: { live?: boolean; turn?: number; timing?: TurnTiming } = {},
+  options: { live?: boolean; turn?: number; timing?: TurnTiming; slowTtft?: boolean } = {},
 ): TurnProbe {
   const turnNo = options.turn ?? -1
   const emptyTiming: TurnTiming = { ...EMPTY_TIMING, turn: turnNo }
@@ -295,7 +389,8 @@ export function scoreTurn(
   if (summaryHit) score += 2
   if (dirtyTokens.length > 0) score += 2
   if (fingerprints.length > 0) score += 2
-  if (isSlowTtft(options.timing ?? EMPTY_TIMING)) score += 1
+  const slowTtft = options.slowTtft ?? isSlowTtft(options.timing ?? EMPTY_TIMING)
+  if (slowTtft) score += 1
   // 0813-standard / minimal trajectories argue against the 08-19 gray.
   if (letMe >= 2 && imDoing === 0) score -= 3
   if (we >= 3 && imDoing === 0 && !summaryHit) score -= 1
@@ -322,6 +417,8 @@ export function scoreTurn(
 interface CachedTurn {
   texts: readonly string[]
   probe: TurnProbe
+  /** The dynamic-line verdict the cached probe was scored with. */
+  slowTtft: boolean
 }
 
 /**
@@ -376,6 +473,14 @@ function timingOf(node: object): { base: Omit<TurnTiming, 'chars' | 'ttftPerChar
  * Probe every loaded reasoning block of a conversation snapshot, scoring each
  * assistant node independently and aggregating. Per-turn results are cached by
  * node identity, so a streaming delta re-scores only the in-flight partial.
+ *
+ * TTFT uses a **session-derived dynamic line** (`networkProfileOf`): the
+ * median/p90 of this session's own turn timings estimate the link, so a slow
+ * proxy does not flag every turn. The line needs ≥ 2 timed turns; below that
+ * the static fallback applies. Because the profile shifts as turns land,
+ * cached probes whose slow-TTFT flag disagrees with the current line are
+ * re-scored (text-only memoization stays valid).
+ *
  * Pass `cache` to scope the per-turn memoization to one session's accumulator;
  * without it a module-level cache is used.
  * @param snapshot - live conversation view.
@@ -386,40 +491,60 @@ export function probeGraySession(
   cache: WeakMap<object, CachedTurn> = grayTurnCacheFor(probeGraySession),
 ): GrayProbe {
   const allTexts: string[] = []
-  const probes: TurnProbe[] = []
+  const entries: { key: object; texts: readonly string[]; timing: TurnTiming; live: boolean }[] = []
+  const timings: TurnTiming[] = []
+
+  const collect = (
+    key: object,
+    blocks: readonly AssistantBlockView[],
+    base: Omit<TurnTiming, 'chars' | 'ttftPerChar'> | null,
+    live: boolean,
+  ): void => {
+    const texts = reasoningTexts(blocks)
+    if (texts.length === 0) return
+    allTexts.push(...texts)
+    const chars = texts.reduce((sum, text) => sum + text.length, 0)
+    const timing: TurnTiming = base === null
+      ? { ...EMPTY_TIMING }
+      : {
+          ...base,
+          chars,
+          ttftPerChar: base.ttftMs !== null ? base.ttftMs / Math.max(chars, 1) : null,
+        }
+    timings.push(timing)
+    entries.push({ key, texts, timing, live })
+  }
 
   for (const node of snapshot.nodes) {
     if (node.kind !== 'assistant') continue
-    const texts = reasoningTexts(node.blocks ?? [])
-    if (texts.length === 0) continue
-    allTexts.push(...texts)
-    const { base } = timingOf(node)
-    const chars = texts.reduce((sum, text) => sum + text.length, 0)
-    const timing: TurnTiming = {
-      ...base,
-      chars,
-      ttftPerChar: base.ttftMs !== null ? base.ttftMs / Math.max(chars, 1) : null,
-    }
-    const cached = cache.get(node)
-    if (cached !== undefined && cached.texts === texts) {
-      probes.push(cached.probe)
-      continue
-    }
-    const probe = scoreTurn(texts, { turn: base.turn, live: false, timing })
-    cache.set(node, { texts, probe })
-    probes.push(probe)
+    collect(node, node.blocks ?? [], timingOf(node).base, false)
   }
-
   if (snapshot.partial !== null) {
-    const texts = reasoningTexts(snapshot.partial.blocks)
-    if (texts.length > 0) {
-      allTexts.push(...texts)
-      // The partial carries no timing; its TTFT columns stay blank.
-      probes.push(scoreTurn(texts, { turn: -1, live: true, timing: { ...EMPTY_TIMING } }))
-    }
+    // The partial carries no timing; its TTFT columns stay blank.
+    collect(snapshot.partial, snapshot.partial.blocks, null, true)
   }
 
-  if (probes.length === 0) return EMPTY_PROBE
+  if (entries.length === 0) return EMPTY_PROBE
+
+  // Session network profile → dynamic per-turn slow-TTFT flag.
+  const network = networkProfileOf(timings)
+
+  const probes: TurnProbe[] = entries.map(({ key, texts, timing, live }) => {
+    const slowTtft = live ? false : isSlowTtftAgainst(timing, network)
+    const cached = cache.get(key)
+    // Text-only memoization; rescore when the dynamic TTFT verdict moved.
+    if (cached !== undefined && cached.texts === texts && cached.slowTtft === slowTtft) {
+      return cached.probe
+    }
+    const probe = scoreTurn(texts, {
+      turn: timing.turn,
+      live,
+      timing,
+      slowTtft,
+    })
+    cache.set(key, { texts, probe, slowTtft })
+    return probe
+  })
 
   const style = styleOf(allTexts, listDensity(allTexts))
 
@@ -453,8 +578,9 @@ export function probeGraySession(
     chunked,
     dirtyTokens,
     fingerprints,
-    slowTtft: probes.some(p => isSlowTtft(p.timing)),
+    slowTtft: probes.some(p => p.timing.ttftMs !== null && isSlowTtftAgainst(p.timing, network)),
     style,
+    network,
     turns: probes,
   }
 }

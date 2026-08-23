@@ -402,7 +402,7 @@ The user is asking for a quick fix. I think the issue is in the config.
 
 // --- 12. Gray-test probe: per-turn scoring over all loaded reasoning ---
 {
-  const { probeGraySession, scoreTurn, isSlowTtft } = await import('./src/client/graytest.ts')
+  const { probeGraySession, scoreTurn, isSlowTtft, isSlowTtftAgainst } = await import('./src/client/graytest.ts')
   const { computeStats } = await import('./src/client/stats.ts')
   const { PATTERNS } = await import('./src/client/keywords.ts')
   const asNode = (text, turn = 1, timing) => ({
@@ -468,13 +468,61 @@ The user is asking for a quick fix. I think the issue is in the config.
     stepStartTime: 1000, firstTokenTime: 9000, completedTime: 20000, turn: 5,
   }
   const timed = probeGraySession(snapOf([asNode("I'm doing it.", 5, slowTiming)]))
-  check('gray: slow ttft flagged', timed.slowTtft, true)
+  check('gray: slow ttft flagged (single turn, static line)', timed.slowTtft, true)
   check('gray: turn timing carried', timed.turns[0].timing.ttftMs, 8000)
   check('gray: ttft adds to score but not required',
     timed.turns[0].score >= 7 && timed.turns[0].score <= 9, true)
   check('gray: isSlowTtft rejects fast token', isSlowTtft({
     ...slowTiming, firstTokenTime: 1500,
   }), false)
+
+  // Dynamic TTFT line: a uniformly slow link raises the session baseline so
+  // its own turns are NOT flagged; one outlier far above the median is.
+  const { networkProfileOf } = await import('./src/client/graytest.ts')
+  const slowLink = [9000, 9500, 10000].map((ttft, i) => ({
+    turn: i + 1, ttftMs: ttft, streamMs: 5000, chars: 2000, ttftPerChar: ttft / 2000,
+  }))
+  const slowProfile = networkProfileOf(slowLink)
+  console.log(`  net slow profile: line=${slowProfile.slowLineMs}ms baseline=${slowProfile.ttftBaseline}ms spread=${slowProfile.ttftSpread}`)
+  check('net: slow-link line above static floor',
+    slowProfile.slowLineMs >= 12000 && slowProfile.slowLineMs <= 60000, true)
+  check('net: slow link does not flag its own median turn',
+    isSlowTtftAgainst({ ...slowLink[1], ttftMs: 9500 }, slowProfile), false)
+  // An outlier must clear ~2× the session baseline (here ≈20 s).
+  check('net: slow link still flags an extreme outlier',
+    isSlowTtftAgainst({ ...slowLink[1], ttftMs: 25000 }, slowProfile), true)
+
+  const fastLink = [600, 700, 800].map((ttft, i) => ({
+    turn: i + 1, ttftMs: ttft, streamMs: 4000, chars: 3000, ttftPerChar: ttft / 3000,
+  }))
+  const fastProfile = networkProfileOf(fastLink)
+  console.log(`  net fast profile: line=${fastProfile.slowLineMs}ms baseline=${fastProfile.ttftBaseline}ms`)
+  check('net: fast-link line stays tight',
+    fastProfile.slowLineMs >= 2500 && fastProfile.slowLineMs <= 6000, true)
+  check('net: fast link flags a 5s outlier', isSlowTtftAgainst({ ttftMs: 5000 }, fastProfile), true)
+  check('net: single sample falls back to static', networkProfileOf([slowLink[0]]).samples === 1
+    && isSlowTtftAgainst(slowLink[0], networkProfileOf([slowLink[0]])), true)
+
+  // Session-level: mixed timings → dynamic flag only on the outlier turn.
+  const mixedTimed = probeGraySession(snapOf([
+    asNode('The user wants a fix. Let me check the logs. Let me try another approach.', 1,
+      { stepStartTime: 0, firstTokenTime: 9000, completedTime: 14000 }),
+    asNode('The user wants a fix. Let me check the logs again now.', 2,
+      { stepStartTime: 0, firstTokenTime: 9500, completedTime: 14500 }),
+    asNode("I'm doing it right now.", 3,
+      { stepStartTime: 0, firstTokenTime: 18000, completedTime: 22000 }),
+  ]))
+  // Uniform ~9s slowness raises the session line (≈36s with the 18s outlier
+  // widening p90), so no turn is TTFT-flagged; the I'm-doing turn still hits
+  // on text alone.
+  check('gray: uniform slowness not flagged (dynamic line)',
+    mixedTimed.turns[0].timing.ttftMs !== null && mixedTimed.slowTtft === false, true)
+  check('gray: outlier turn scored with dynamic line', mixedTimed.turns[2].timing.ttftMs, 18000)
+  check('gray: network profile exposed', typeof mixedTimed.network.slowLineMs, 'number')
+  console.log(`  mixed profile: line=${mixedTimed.network.slowLineMs}ms slowTtft=${mixedTimed.slowTtft}`)
+  check('gray: outlier below widened line is not flagged',
+    mixedTimed.network.slowLineMs !== null && 18000 < (mixedTimed.network.slowLineMs ?? Infinity)
+      && mixedTimed.verdict === 'likely', true)
 
   // Partial (live) turns have no timing; verdict still comes from text.
   const liveSnap = snapOf(

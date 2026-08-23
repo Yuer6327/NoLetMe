@@ -48,7 +48,9 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 ## <a id="gray-test"></a>灰测如何判定
 
-面板「灰测」一行（未命中 / 疑似 / 命中）的规则写在这里。实现：[`src/client/graytest.ts`](src/client/graytest.ts)（信号表 [`gray-signals.ts`](src/client/gray-signals.ts)），`GRAYTEST_VERSION = 3`。0813 词表（`We need` / `Let me` / `The user wants`）**完全不动**。
+**一句话**：对会话里每个助手轮独立打分，`score ≥ 5` 命中、`≥ 2` 疑似、否则未命中；任一轮命中即整段会话显示命中。加分项：出现 `I'm doing` **+4**、开场即 `I'm doing` **+2**、概要/条目形 CoT（列表行占比 ≥ 35%）**+2**、脏 token（`Nameeee` 等）**+2**、泄漏 `fp_…` 串 **+2**、TTFT 超过本会话动态线 **+1**；减分项：`Let me ≥ 2` 且无 I'm doing **−3**、裸 `we ≥ 3` 且无 I'm doing **−1**。0813 词表完全不动。
+
+面板「灰测」一行（未命中 / 疑似 / 命中）的规则写在这里。实现：[`src/client/graytest.ts`](src/client/graytest.ts)（信号表 [`gray-signals.ts`](src/client/gray-signals.ts)），`GRAYTEST_VERSION = 3`。
 
 ### 按轮判定，再聚合
 
@@ -72,13 +74,13 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 | **概要形**：列表/标题行占比 ≥ 35%（或 ≥ 15% 且有 `I'm doing`） | **+2** | 列表行 = 行首 `-` `*` `•` `1.` `1)` `#`–`###` |
 | 脏 token：`Nameeee`、`antml:thinking`、`<antml`、`EDMFunc`、`everydaycalculation` | **+2** | 从 reasoning 漏出 |
 | 后端串 `fp_…`（如 `fp_v4pro_20260812_prod`） | **+2** | 部署指纹，当细节不是身份 |
-| **TTFT 异常慢**（≥ 6 s，或 ≥ 300 ms/推理字符） | **+1** | 见下节；受网络影响，封顶 +1 |
+| **TTFT 异常慢**（超过本会话动态线） | **+1** | 见下节；受网络影响，封顶 +1 |
 | 该轮 `let me` ≥ 2 且无 `I'm doing` | **−3** | 典型 0813 Standard |
 | 裸 `we` ≥ 3、无 `I'm doing`、非概要形 | **−1** | 典型 0813 Minimal |
 
-阈值：`score ≥ 5` → **命中**；`≥ 2` → **疑似**；否则未命中。家族展示：有 `I'm doing` → I'm doing；否则脏 token / `fp_` → 指纹；否则概要形 → 概要式。
+阈值：`score ≥ 5` → 命中；`score ≥ 2` → 疑似；其余未命中。
 
-### TTFT / 吐字节奏（数据照显，评分保守）
+### TTFT / 吐字节奏（动态线，抗网络干扰）
 
 社区反复强调灰测「首字很慢」「一段一段出」。宿主在 `assistant` 节点上记录 `timing.stepStartTime / firstTokenTime / completedTime`，插件据此给出每轮：
 
@@ -86,7 +88,18 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 - **吐字时长** stream = completed − firstToken；
 - **ms/字符** = TTFT ÷ 该轮推理字符数。
 
-这些时间戳包含排队与网络，**会被网络质量干扰**，所以只作弱加分（+1，且需 ≥ 6 s 或 ≥ 300 ms/字符才触发），原始数字始终显示——判断留给用户。流式 partial 没有时间戳，TTFT 列留空。
+这些时间戳包含排队与网络，固定阈值会在慢链路上误报。所以插件用**会话自己的历史轮**估网络质量，动态调整命中线：
+
+| 画像字段 | 含义 |
+|---|---|
+| `ttftBaseline` | 已计轮 TTFT 的**中位数**——这条链路的底噪 |
+| `ttftSpread` | p90 ÷ p50——抖动程度 |
+| `streamCharsPerSec` | 吐字阶段每秒推理字符（慢链路同样拖低它） |
+| `slowLineMs` | 动态命中线 = max(基线 + 3 s, 基线 × 2 × 抖动)，下限 2.5 s、上限 60 s |
+
+效果：全程 ~9 s 的慢代理把基线抬到 9.5 s、命中线抬到 ~20 s——自己的每一轮都**不会**被误报；快链路（~0.7 s 基线）命中线收紧到 ~3.7 s，一次 5 s 的卡顿照样被抓。样本 < 2 轮时退回静态规则（≥ 6 s 或 ≥ 300 ms/字符）。
+
+TTFT 仍只作 +1 弱加分，原始数字与画像始终显示——判断留给用户。流式 partial 没有时间戳，TTFT 列留空。
 
 ### 面板上的数字（命中与否都显示）
 
