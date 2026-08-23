@@ -400,101 +400,105 @@ The user is asking for a quick fix. I think the issue is in the config.
   check('anomaly: empty assistant → none', bare.anomaly, 'none')
 }
 
-// --- 12. Gray-test probe: all loaded reasoning; 0813 classifier stays unchanged ---
+// --- 12. Gray-test probe: per-turn scoring over all loaded reasoning ---
 {
-  const { probeGray, probeGraySession } = await import('./src/client/graytest.ts')
+  const { probeGraySession, scoreTurn, isSlowTtft } = await import('./src/client/graytest.ts')
   const { computeStats } = await import('./src/client/stats.ts')
   const { PATTERNS } = await import('./src/client/keywords.ts')
+  const asNode = (text, turn = 1, timing) => ({
+    kind: 'assistant', seq: turn, turn, time: 0,
+    blocks: [{ kind: 'reasoning', text }],
+    ...(timing ? { timing } : {}),
+  })
+  const snapOf = (nodes, partial = null) => ({
+    sessionId: 'g', nodes, partial, openState: 'open', hasMore: false, loadingOlder: false,
+  })
 
-  const imDoing = probeGray([{
-    kind: 'reasoning',
-    text: "I'm doing the raft survival game now.\nI'm doing the inventory next.",
-  }])
+  // Single-turn probes through the session entry (blocks are per node now).
+  const one = (text) => probeGraySession(snapOf([asNode(text)]))
+
+  const imDoing = one("I'm doing the raft survival game now.\nI'm doing the inventory next.")
   check('gray: I\'m doing → likely', imDoing.verdict, 'likely')
   check('gray: I\'m doing profile', imDoing.profile, 'im-doing')
   check('gray: I\'m doing count', imDoing.imDoing, 2)
-  check('gray: opener captured', imDoing.opener.startsWith("I'm doing"), true)
+  check('gray: opener captured', imDoing.turns[0].opener.startsWith("I'm doing"), true)
   check('gray: style blocks', imDoing.style.blocks, 1)
   check('gray: style ttr in (0,1]', imDoing.style.typeToken > 0 && imDoing.style.typeToken <= 1, true)
 
-  const jammed = probeGray([{ kind: 'reasoning', text: "I'mdoing the next step of the build." }])
+  const jammed = one("I'mdoing the next step of the build.")
   check('gray: jammed I\'mdoing still counts', jammed.imDoing, 1)
 
-  const summary = probeGray([{
-    kind: 'reasoning',
-    text: ['# Plan', '- inventory', '- build raft', '- shark AI', '- island map'].join('\n'),
-  }])
+  const summary = one(['# Plan', '- inventory', '- build raft', '- shark AI', '- island map'].join('\n'))
   check('gray: outline-only → possible', summary.verdict, 'possible')
   check('gray: outline profile', summary.profile, 'summary')
   check('gray: outline listRatio high', summary.style.listRatio >= 0.8, true)
 
-  const dirty = probeGray([{
-    kind: 'reasoning',
-    text: 'Need a Nameeee check. fp_v4pro_20260812_prod leaked in the chain.',
-  }])
+  const dirty = one('Need a Nameeee check. fp_v4pro_20260812_prod leaked in the chain.')
   check('gray: dirty token listed', dirty.dirtyTokens.includes('Nameeee'), true)
   check('gray: backend fp listed', dirty.fingerprints.some(fp => fp.startsWith('fp_v4pro_')), true)
   check('gray: leaked-fp profile', dirty.profile, 'fingerprint')
   check('gray: leaked-fp at least possible', dirty.verdict === 'possible' || dirty.verdict === 'likely', true)
 
-  const standard = probeGray([{
-    kind: 'reasoning',
-    text: 'The user wants a fix. Let me check the logs. Let me try another approach.',
-  }])
+  const standard = one('The user wants a fix. Let me check the logs. Let me try another approach.')
   check('gray: 0813 let-me is a miss', standard.verdict, 'miss')
 
-  const minimal = probeGray([{
-    kind: 'reasoning',
-    text: 'We need to inspect the layout. We should run tests. We can then patch the script. Let\'s move.',
-  }])
+  const minimal = one("We need to inspect the layout. We should run tests. We can then patch the script. Let's move.")
   check('gray: 0813 we-need is a miss', minimal.verdict, 'miss')
 
-  const manyBlocks = probeGray([
-    { kind: 'reasoning', text: 'We need to inspect the project layout carefully before touching anything.' },
-    { kind: 'reasoning', text: 'We should run the tests to confirm nothing broke in the last patch.' },
-    { kind: 'reasoning', text: 'We can then open the editor to patch the build script if needed.' },
-  ])
-  check('gray: 0813 multi-block we-need is still a miss', manyBlocks.verdict, 'miss')
+  const manyBlocks = probeGraySession(snapOf([
+    { kind: 'assistant', seq: 1, turn: 1, blocks: [{ kind: 'reasoning', text: 'We need to inspect the project layout carefully before touching anything.' }] },
+    { kind: 'assistant', seq: 2, turn: 2, blocks: [{ kind: 'reasoning', text: 'We should run the tests to confirm nothing broke in the last patch.' }] },
+    { kind: 'assistant', seq: 3, turn: 3, blocks: [{ kind: 'reasoning', text: 'We can then open the editor to patch the build script if needed.' }] },
+  ]))
+  check('gray: 0813 multi-turn we-need is still a miss', manyBlocks.verdict, 'miss')
   check('gray: style still reports p50 on a miss', manyBlocks.style.p50 > 0, true)
 
-  const snap = computeStats({
-    sessionId: 'g1',
-    nodes: [{
-      kind: 'assistant', seq: 1,
-      blocks: [{ kind: 'reasoning', text: 'Let me think about the old turn.' }],
-    }],
-    partial: { blocks: [{ kind: 'reasoning', text: "I'm doing the current turn now." }] },
-    openState: 'open',
-    hasMore: false,
-    loadingOlder: false,
-  })
-  check('gray: 0813 session mode still hesitant', snap.mode, 'hesitant')
-  check('gray: session probe sees I\'m doing', snap.gray.imDoing, 1)
-  // Prior Let me still counts against the gray score, so this mixed history is
-  // not a clean 08-19 hit — the 0813 classifier stays the session mode.
-  check('gray: 0813 letMe still counted session-wide', snap.words.letMe, 1)
-  const letMeIdx = PATTERNS.findIndex(p => p.label === 'pattern.letMe')
-  check('gray: 0813 pattern table length unchanged', PATTERNS.length, 24)
-  check('gray: 0813 let-me pattern still present', letMeIdx >= 0, true)
+  // Per-turn isolation: a gray draw in turn 2 survives an 0813 turn 1.
+  const mixed = probeGraySession(snapOf([
+    asNode('Let me think about this carefully. Let me check the logs first.', 1),
+    asNode("I'm doing the implementation now.", 2),
+  ]))
+  check('gray: mixed session aggregates to likely', mixed.verdict, 'likely')
+  check('gray: two turns probed separately', mixed.turns.length, 2)
+  check('gray: turn1 alone is a miss', mixed.turns[0].verdict, 'miss')
+  check('gray: turn2 alone is likely', mixed.turns[1].verdict, 'likely')
 
-  const session = probeGraySession({
-    sessionId: 'g2',
-    nodes: [
-      { kind: 'assistant', seq: 1, blocks: [{ kind: 'reasoning', text: "I'm doing the first turn." }] },
-      { kind: 'assistant', seq: 2, blocks: [{ kind: 'reasoning', text: "I'm doing the second turn too." }] },
-    ],
-    partial: null,
-    openState: 'open',
-    hasMore: false,
-    loadingOlder: false,
-  })
-  check('gray: all assistant reasoning is folded', session.imDoing, 2)
-  check('gray: two-turn I\'m doing is likely', session.verdict, 'likely')
-  check('gray: style blocks = 2', session.style.blocks, 2)
+  // TTFT from host timing feeds the probe (+1 max) and surfaces as data.
+  const slowTiming = {
+    stepStartTime: 1000, firstTokenTime: 9000, completedTime: 20000, turn: 5,
+  }
+  const timed = probeGraySession(snapOf([asNode("I'm doing it.", 5, slowTiming)]))
+  check('gray: slow ttft flagged', timed.slowTtft, true)
+  check('gray: turn timing carried', timed.turns[0].timing.ttftMs, 8000)
+  check('gray: ttft adds to score but not required',
+    timed.turns[0].score >= 7 && timed.turns[0].score <= 9, true)
+  check('gray: isSlowTtft rejects fast token', isSlowTtft({
+    ...slowTiming, firstTokenTime: 1500,
+  }), false)
 
-  const empty = probeGray([{ kind: 'text', text: "I'm doing this in visible text." }])
-  check('gray: text blocks are never probed', empty.verdict, 'miss')
-  check('gray: text I\'m doing not counted', empty.imDoing, 0)
+  // Partial (live) turns have no timing; verdict still comes from text.
+  const liveSnap = snapOf(
+    [asNode('The user wants a summary. Let me write it out fully here.', 1)],
+    { blocks: [{ kind: 'reasoning', text: "I'm doing the current draft now." }] },
+  )
+  const live = computeStats(liveSnap)
+  check('gray: 0813 session mode still hesitant', live.mode, 'hesitant')
+  check('gray: live partial probed as its own turn', live.gray.turns.length, 2)
+  check('gray: live partial is likely', live.gray.turns[1].verdict, 'likely')
+  check('gray: live turn has no timing', live.gray.turns[1].timing.ttftMs, null)
+  check('gray: aggregate follows best turn', live.gray.verdict, 'likely')
+
+  // scoreTurn stays exported and pure for external use.
+  const pure = scoreTurn(["We need to check."])
+  check('gray: scoreTurn pure helper works', pure.verdict, 'miss')
+
+  const empty = one('')
+  void empty
+  const textOnly = probeGraySession(snapOf([{
+    kind: 'assistant', seq: 1, turn: 1, blocks: [{ kind: 'text', text: "I'm doing this in visible text." }],
+  }]))
+  check('gray: text blocks are never probed', textOnly.verdict, 'miss')
+  check('gray: text I\'m doing not counted', textOnly.imDoing, 0)
 }
 
 console.log(failures === 0 ? '\nAll checks passed ✓' : `\n${failures} check(s) FAILED ✗`)

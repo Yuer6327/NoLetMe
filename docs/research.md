@@ -98,38 +98,34 @@ a route, or a checkpoint, and Flash shifts style without a score change. The
 panel is a diagnostic mirror of the agent's current reasoning style, not a
 model identity test.
 
-## Gray-test probe (all loaded reasoning, independent of 0813)
+## Gray-test probe (per turn, independent of 0813)
 
 The 0813 taxonomy above is **session-wide** and stays frozen (`KEYWORD_TAXONOMY_VERSION = 1`,
 `CLASSIFIER_VERSION = 1`). Community gray tests in 2026-06 (expert-mode Markdown CoT),
 2026-07 (Web “summary” / 一段一段的总结性 CoT), and 2026-08-19/08-20 (V4 Pro
 `I'm doing` reruns on dsh Standard + web Chat) use a **different** fingerprint
 that the 0813 word list cannot see: `Let me` is often absent, `I'm doing` /
-`I am doing` returns, CoT is outline-shaped or chunked, and reasoning sometimes
-leaks dirty tokens (`Nameeee`, `antml:thinking`) or backend strings
-(`fp_v4pro_20260812_prod`).
+`I am doing` returns, CoT is outline-shaped or chunked, TTFT is slow with
+chunked delivery, and reasoning sometimes leaks dirty tokens (`Nameeee`,
+`antml:thinking`) or backend strings (`fp_v4pro_20260812_prod`).
 
-NoLetMe therefore adds a second probe (`graytest.ts`, `GRAYTEST_VERSION = 2`)
-over **every loaded reasoning block** (finalized assistant nodes + in-flight
-partial). It does **not** rewrite the 0813 classifier.
+Since v0.3.0 (`graytest.ts`, `GRAYTEST_VERSION = 3`; signals in
+`gray-signals.ts`) the probe scores **each assistant node independently** —
+a gray draw in one turn is not diluted by earlier 0813 turns — then
+aggregates (any likely → likely; else any possible → possible). The streaming
+partial counts as its own live turn without timing.
 
-**Summary-shaped CoT** is the list/heading line ratio across *all* those
-blocks: a non-empty line counting as a list item if it starts with `-` / `*` /
-`•` / `1.` / `#`. Ratio ≥ 0.35 is a hit. Short paragraphs alone do **not**
-count — 0813 We-need blocks are also short — unless `I'm doing` is also
-present.
+Per-turn signals (`I'm doing`, opener, no-let-me, outline density ≥ 35%,
+dirty tokens, `fp_…`, slow TTFT) are weighted as documented in the README's
+[灰测如何判定](../README.md#gray-test) section. Timing comes from host-recorded
+`timing.stepStartTime/firstTokenTime/completedTime`; because those include
+queueing and network, slow-TTFT adds at most **+1** and its raw numbers are
+always displayed for the user to judge.
 
-| signal | why |
-|---|---|
-| `I'm doing` / `I am doing` (incl. jammed `I'mdoing`) | 08-19/08-20 gray fingerprint; 0813 GA reportedly never produced it |
-| latest-block opener is `I'm doing…` | stronger than a mid-block occurrence |
-| outline / list CoT (line density ≥ 35%) | 06 expert-mode + 07 “摘要形思维链” |
-| several mid-length reasoning blocks **and** another gray signal | community “段尾停顿” — cadence is not in the snapshot, so this is supporting only |
-| dirty tokens / `fp_…` strings | leaked in reasoning during 08-19 discussion; shown as details, not as identity |
-
-Scoring is conservative: a lone 0813 `Let me` / `We need` trajectory is a **miss**;
-`I'm doing` without `Let me` is a **hit**. The probe never counts `text` blocks.
-A gray hit does **not** prove routing (Claude / Fable / Qwen).
+Calibration (`pnpm calibrate`): community-quoted positive sessions must hit;
+the 11 frozen modeltest aggregate records (synthesized into sessions,
+including the two "build" runs that carried a few real `I'm` tokens) must
+never reach `likely`.
 
 Alongside the verdict the probe always emits **style stats** (list ratio, p50
 block length, type-token ratio, mean word length). These are local, untrained
@@ -138,6 +134,9 @@ descriptive numbers — not the trained ensemble in
 Stylistic Fingerprints of Large Language Models”), which needs three
 architectures, family-labelled corpora, and unanimous-vote calibration. That
 kind of model-family classifier does not belong in this browser plugin.
+
+A gray hit does **not** prove routing (Claude / Fable / Qwen); it reports that
+a turn matches the community gray cluster.
 
 ## Counting scope: reasoning blocks only
 

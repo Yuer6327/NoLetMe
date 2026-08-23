@@ -7,15 +7,20 @@
  * cluster (2026-06 expert-mode, 2026-07 summary CoT, 2026-08-19/08-20
  * `I'm doing` reruns)?
  *
- * Scoring is observational, not a routing proof. Style numbers (list density,
- * p50 block length, type-token ratio) are reported as complete data even on a
- * miss so the panel can show the fingerprint without a prose caption.
+ * The probe works **per turn** — each finalized assistant node is scored
+ * independently, so one gray draw is not diluted by earlier 0813 turns — and
+ * reports both the per-turn table and a session aggregate. Timing signals
+ * (TTFT) come from host-recorded step/chunk timestamps and are shown as raw
+ * numbers; they are network-sensitive, so they only add a weak +1.
  */
 
 import type { AssistantBlockView, ConversationView } from './conversation.ts'
+import {
+  DIRTY_TOKENS, FINGERPRINT_RE, IM_DOING_RE, LIST_LINE_RE, OPENERS,
+} from './gray-signals.ts'
 
 /** Version of the gray-test probe (independent of the 0813 classifier). */
-export const GRAYTEST_VERSION = 2 as const
+export const GRAYTEST_VERSION = 3 as const
 
 /** How confidently the loaded reasoning matches the gray-test cluster. */
 export type GrayVerdict = 'miss' | 'possible' | 'likely'
@@ -30,7 +35,7 @@ export interface GrayEvidence {
   readonly detail?: string
 }
 
-/** Local style / statistical fingerprint over reasoning (not a model-identity claim). */
+/** Local style / statistical fingerprint (not a model-identity claim). */
 export interface StyleStats {
   /** Reasoning blocks folded into the probe. */
   readonly blocks: number
@@ -48,27 +53,74 @@ export interface StyleStats {
   readonly avgWordLen: number
 }
 
+/** Per-turn timing fingerprint from host-recorded event timestamps. */
+export interface TurnTiming {
+  /** Turn number (`node.turn`), or −1 when unknown. */
+  readonly turn: number
+  /** firstTokenTime − stepStartTime in ms; null when either boundary is missing. */
+  readonly ttftMs: number | null
+  /** completedTime − firstTokenTime in ms; null when no token delta recorded. */
+  readonly streamMs: number | null
+  /** Reasoning characters produced this turn (for throughput context). */
+  chars: number
+  /** ttftMs ÷ reasoning chars; null without TTFT. */
+  ttftPerChar: number | null
+}
+
+/**
+ * One assistant turn scored on its own. The session verdict aggregates these,
+ * so a single gray draw stays visible inside an old 0813 history.
+ */
+export interface TurnProbe {
+  /** Turn number, or −1 when unknown. */
+  readonly turn: number
+  /** True for the in-flight partial (its blocks change every frame). */
+  readonly live: boolean
+  readonly verdict: GrayVerdict
+  readonly score: number
+  readonly imDoing: number
+  /** `I'm doing` occurrences per KB of reasoning (density, not raw count). */
+  readonly imDoingPerKb: number
+  readonly listRatio: number
+  readonly opener: string
+  readonly dirtyTokens: readonly string[]
+  readonly fingerprints: readonly string[]
+  readonly timing: TurnTiming
+}
+
 /** Probe result over all loaded reasoning. */
 export interface GrayProbe {
+  /** Verdict of the best turn (any likely → likely; else any possible). */
   readonly verdict: GrayVerdict
-  /** 0..1, score / 8 clamped. */
+  /** Best turn's score clamped to 0..8 then normalized. */
   readonly confidence: number
+  /** Family of the best turn. */
   readonly profile: GrayProfile
+  /** Best turn's score. */
   readonly score: number
-  /** First line of the latest reasoning block (truncated). */
-  readonly opener: string
-  /** `I'm doing` / `I am doing` hits across all reasoning. */
+  /** `I'm doing` hits across all reasoning. */
   readonly imDoing: number
-  /** Outline/list density (same as `style.listRatio`). */
+  /** Outline/list density across all reasoning (0..1). */
   readonly summaryScore: number
-  /** Several mid-length reasoning blocks (supporting signal only). */
+  /** Several mid-length reasoning blocks across the session (supporting only). */
   readonly chunked: boolean
-  /** Distinct dirty-token hits found in reasoning. */
+  /** Distinct dirty-token hits found in any turn. */
   readonly dirtyTokens: readonly string[]
-  /** Distinct `fp_…` backend fingerprint strings. */
+  /** Distinct `fp_…` backend fingerprint strings in any turn. */
   readonly fingerprints: readonly string[]
+  /** Slow-TTFT seen in at least one turn (network-sensitive; +1 max per turn). */
+  readonly slowTtft: boolean
   readonly style: StyleStats
-  readonly evidence: readonly GrayEvidence[]
+  /** Per-turn probes, oldest first; the last entry may be the live partial. */
+  readonly turns: readonly TurnProbe[]
+}
+
+const EMPTY_TIMING: TurnTiming = {
+  turn: -1,
+  ttftMs: null,
+  streamMs: null,
+  chars: 0,
+  ttftPerChar: null,
 }
 
 const EMPTY_STYLE: StyleStats = {
@@ -86,30 +138,15 @@ const EMPTY_PROBE: GrayProbe = {
   confidence: 0,
   profile: 'none',
   score: 0,
-  opener: '',
   imDoing: 0,
   summaryScore: 0,
   chunked: false,
   dirtyTokens: [],
   fingerprints: [],
+  slowTtft: false,
   style: EMPTY_STYLE,
-  evidence: [],
+  turns: [],
 }
-
-/** Community-attested dirty tokens that leak in reasoning (case-insensitive). */
-const DIRTY_TOKENS: readonly { id: string; pattern: RegExp }[] = [
-  { id: 'Nameeee', pattern: /\bNameeee\b/ },
-  { id: 'antml:thinking', pattern: /antml:thinking/i },
-  { id: '<antml', pattern: /<\/?antml\b/i },
-  { id: 'EDMFunc', pattern: /\bEDMFunc\b/ },
-  { id: 'everydaycalculation', pattern: /\beverydaycalculation\b/i },
-]
-
-/** Backend fingerprint strings reported during the 08-19 gray (`fp_v4pro_…`). */
-const FINGERPRINT_RE = /\bfp_(?:v4pro_)?[a-zA-Z0-9][a-zA-Z0-9_\-]{3,}\b/g
-
-/** `I'm doing` / `I am doing` / jammed `I'mdoing`. */
-const IM_DOING_RE = /\bi(?:['’]m| am)\s*doing\b/gi
 
 function reasoningTexts(blocks: readonly AssistantBlockView[]): string[] {
   const out: string[] = []
@@ -120,53 +157,13 @@ function reasoningTexts(blocks: readonly AssistantBlockView[]): string[] {
   return out
 }
 
-/**
- * Every reasoning block in the loaded snapshot: finalized assistant nodes in
- * order, then the in-flight partial. History not yet paged in is out of scope
- * (same window as the 0813 fold).
- */
-export function allReasoningBlocks(snapshot: ConversationView): readonly AssistantBlockView[] {
-  const out: AssistantBlockView[] = []
-  for (const node of snapshot.nodes) {
-    if (node.kind !== 'assistant') continue
-    for (const block of node.blocks ?? []) {
-      if (block.kind === 'reasoning' && block.text !== undefined && block.text !== '') out.push(block)
-    }
-  }
-  if (snapshot.partial !== null) {
-    for (const block of snapshot.partial.blocks) {
-      if (block.kind === 'reasoning' && block.text !== undefined && block.text !== '') out.push(block)
-    }
-  }
-  return out
-}
-
-/** @deprecated Use {@link allReasoningBlocks}; kept for older tests. */
-export function currentTurnOf(snapshot: ConversationView): readonly AssistantBlockView[] {
-  return allReasoningBlocks(snapshot)
-}
-
 function firstLine(text: string): string {
   const line = text.split(/\r?\n/u, 1)[0]?.trim() ?? ''
   return line.length > 80 ? `${line.slice(0, 77)}…` : line
 }
 
-function countImDoing(text: string): number {
-  const matches = text.match(IM_DOING_RE)
-  return matches === null ? 0 : matches.length
-}
-
-function openerIsImDoing(opener: string): boolean {
-  return /^(?:i(?:['’]m| am)\s*doing)\b/i.test(opener.trim())
-}
-
-function countLetMe(text: string): number {
-  const matches = text.match(/\blet\s+me\b/gi)
-  return matches === null ? 0 : matches.length
-}
-
-function countWe(text: string): number {
-  const matches = text.match(/\bwe\b/gi)
+function countMatches(text: string, re: RegExp): number {
+  const matches = text.match(re)
   return matches === null ? 0 : matches.length
 }
 
@@ -176,26 +173,6 @@ function tokenize(text: string): readonly string[] {
     .split(/\s+/u)
     .map(token => token.replace(/^[^a-z0-9']+|[^a-z0-9']+$/gu, ''))
     .filter(token => token !== '')
-}
-
-function summaryShape(texts: readonly string[]): { listRatio: number; shortPara: boolean } {
-  let lines = 0
-  let list = 0
-  let chars = 0
-  for (const text of texts) {
-    const parts = text.split(/\n+/u).map(line => line.trim()).filter(line => line !== '')
-    for (const line of parts) {
-      lines += 1
-      chars += line.length
-      if (/^(?:[-*•]|\d+[.)]|#{1,3}\s)/u.test(line)) list += 1
-    }
-  }
-  if (lines === 0) return { listRatio: 0, shortPara: false }
-  const avg = chars / lines
-  return {
-    listRatio: list / lines,
-    shortPara: lines >= 3 && avg < 140,
-  }
 }
 
 function median(values: readonly number[]): number {
@@ -241,115 +218,245 @@ function styleOf(texts: readonly string[], listRatio: number): StyleStats {
   }
 }
 
+/** List-line density over non-empty lines of the given texts. */
+function listDensity(texts: readonly string[]): number {
+  let lines = 0
+  let list = 0
+  for (const text of texts) {
+    for (const raw of text.split(/\n+/u)) {
+      const line = raw.trim()
+      if (line === '') continue
+      lines += 1
+      if (LIST_LINE_RE.test(line)) list += 1
+    }
+  }
+  return lines === 0 ? 0 : list / lines
+}
+
 /**
- * Probe a bag of assistant blocks (tests). Live folding uses {@link probeGraySession}.
- * @param blocks - assistant blocks; non-reasoning entries are ignored.
+ * Community "首字很慢" tell. Deliberately loose (≥ 6 s absolute or ≥ 300 ms
+ * per reasoning char) because host timestamps include queueing + network.
  */
-export function probeGray(blocks: readonly AssistantBlockView[]): GrayProbe {
-  const texts = reasoningTexts(blocks)
-  if (texts.length === 0) return EMPTY_PROBE
+export function isSlowTtft(timing: TurnTiming): boolean {
+  return timing.ttftMs !== null
+    && (timing.ttftMs >= 6000 || (timing.ttftPerChar !== null && timing.ttftPerChar >= 300))
+}
+
+/**
+ * Score one bag of reasoning blocks with optional timing. Pure — used by the
+ * per-turn fold and by tests.
+ */
+export function scoreTurn(
+  texts: readonly string[],
+  options: { live?: boolean; turn?: number; timing?: TurnTiming } = {},
+): TurnProbe {
+  const turnNo = options.turn ?? -1
+  const emptyTiming: TurnTiming = { ...EMPTY_TIMING, turn: turnNo }
+  if (texts.length === 0) {
+    return {
+      turn: turnNo,
+      live: options.live ?? false,
+      verdict: 'miss',
+      score: 0,
+      imDoing: 0,
+      imDoingPerKb: 0,
+      listRatio: 0,
+      opener: '',
+      dirtyTokens: [],
+      fingerprints: [],
+      timing: options.timing ?? emptyTiming,
+    }
+  }
 
   const joined = texts.join('\n')
+  const chars = joined.length
   const opener = firstLine(texts[texts.length - 1])
-  const imDoing = countImDoing(joined)
-  const letMe = countLetMe(joined)
-  const we = countWe(joined)
-  const shape = summaryShape(texts)
-  // Outline bullets are the summary-CoT tell. Short paragraphs alone are too
-  // common in 0813 We-need blocks to count without an I'm-doing fingerprint.
-  const summaryHit = shape.listRatio >= 0.35 || (shape.shortPara && imDoing > 0)
-  const summaryScore = clamp01(shape.listRatio)
-
-  const lengths = texts.map(text => text.length)
-  const mid = median(lengths)
-  const chunked = texts.length >= 3 && mid >= 30 && mid <= 800
+  const imDoing = countMatches(joined, IM_DOING_RE)
+  const lm = joined.match(/\blet\s+me\b/gi)
+  const letMe = lm === null ? 0 : lm.length
+  const wem = joined.match(/\bwe\b/gi)
+  const we = wem === null ? 0 : wem.length
+  const listRatio = listDensity(texts)
 
   const dirtyTokens: string[] = []
   for (const token of DIRTY_TOKENS) {
     if (token.pattern.test(joined)) dirtyTokens.push(token.id)
   }
-
   const fingerprints = unique(joined.match(FINGERPRINT_RE) ?? [])
-  const style = styleOf(texts, shape.listRatio)
 
-  const evidence: GrayEvidence[] = []
+  // Summary-shape: outline bullets are the tell; short paragraphs only count
+  // alongside I'm doing (0813 We-need blocks are short too).
+  const summaryHit = listRatio >= 0.35 || (imDoing > 0 && listRatio >= 0.15)
+
   let score = 0
-
-  if (imDoing > 0) {
-    score += 4
-    evidence.push({ id: 'im-doing', hit: true, detail: String(imDoing) })
-  }
-  if (openerIsImDoing(opener)) {
-    score += 2
-    evidence.push({ id: 'im-doing-opener', hit: true, detail: opener })
-  }
-  if (imDoing > 0 && letMe === 0) {
-    score += 1
-    evidence.push({ id: 'no-let-me', hit: true })
-  }
-  if (summaryHit) {
-    score += 2
-    evidence.push({
-      id: 'summary-shape',
-      hit: true,
-      detail: `${Math.round(shape.listRatio * 100)}%`,
-    })
-  }
-  // Streaming cadence (段尾停顿) is not in the snapshot. Many mid-length
-  // reasoning blocks is also how 0813 stores a long trajectory, so chunking
-  // only supports a hit that already has I'm-doing / outline / leaked fp.
-  if (chunked && (imDoing > 0 || summaryHit || dirtyTokens.length > 0 || fingerprints.length > 0)) {
-    score += 1
-    evidence.push({ id: 'chunked-blocks', hit: true, detail: `${texts.length}` })
-  }
-  if (dirtyTokens.length > 0) {
-    score += 2
-    evidence.push({ id: 'dirty-token', hit: true, detail: dirtyTokens.join(', ') })
-  }
-  if (fingerprints.length > 0) {
-    score += 2
-    evidence.push({ id: 'backend-fp', hit: true, detail: fingerprints.join(', ') })
-  }
-  // 0813-standard / 0813-minimal trajectories argue *against* the 08-19 gray.
+  if (imDoing > 0) score += 4
+  if (OPENERS.some(entry => entry.re.test(opener))) score += OPENERS[0].weight
+  if (imDoing > 0 && letMe === 0) score += 1
+  if (summaryHit) score += 2
+  if (dirtyTokens.length > 0) score += 2
+  if (fingerprints.length > 0) score += 2
+  if (isSlowTtft(options.timing ?? EMPTY_TIMING)) score += 1
+  // 0813-standard / minimal trajectories argue against the 08-19 gray.
   if (letMe >= 2 && imDoing === 0) score -= 3
   if (we >= 3 && imDoing === 0 && !summaryHit) score -= 1
 
   const verdict: GrayVerdict = score >= 5 ? 'likely' : score >= 2 ? 'possible' : 'miss'
-  const profile: GrayProfile = imDoing > 0
-    ? 'im-doing'
-    : dirtyTokens.length > 0 || fingerprints.length > 0
-      ? 'fingerprint'
-      : summaryHit
-        ? 'summary'
-        : 'none'
+  const kb = Math.max(chars, 1) / 1024
 
   return {
+    turn: turnNo,
+    live: options.live ?? false,
     verdict,
-    confidence: clamp01(Math.max(0, score) / 8),
-    profile,
     score,
-    opener,
     imDoing,
-    summaryScore,
-    chunked,
+    imDoingPerKb: imDoing / kb,
+    listRatio,
+    opener,
     dirtyTokens,
     fingerprints,
-    style,
-    evidence,
+    timing: options.timing ?? emptyTiming,
+  }
+}
+
+/** @internal cached fold entry keyed by node identity. */
+interface CachedTurn {
+  texts: readonly string[]
+  probe: TurnProbe
+}
+
+/**
+ * Per-session turn cache. A module-level WeakMap would be fine for finalized
+ * nodes (they are GC'd with the session), but the accumulator passes a stable
+ * per-session cache so switching sessions cannot reuse another session's
+ * entries when a host reuses node objects across snapshots.
+ */
+const caches: WeakMap<object, WeakMap<object, CachedTurn>> = new WeakMap()
+
+/** Get (or lazily create) the turn cache owned by `owner` (the accumulator). */
+export function grayTurnCacheFor(owner: object): WeakMap<object, CachedTurn> {
+  let cache = caches.get(owner)
+  if (cache === undefined) {
+    cache = new WeakMap()
+    caches.set(owner, cache)
+  }
+  return cache
+}
+
+/**
+ * Read host-recorded timing off an assistant node. Tolerates older hosts that
+ * omit `timing` entirely.
+ */
+function timingOf(node: object): { base: Omit<TurnTiming, 'chars' | 'ttftPerChar'> } {
+  const t = (node as { timing?: unknown }).timing
+  const stepStart = typeof t === 'object' && t !== null
+    && typeof (t as { stepStartTime?: unknown }).stepStartTime === 'number'
+    ? (t as { stepStartTime: number }).stepStartTime
+    : null
+  const firstToken = typeof t === 'object' && t !== null
+    && typeof (t as { firstTokenTime?: unknown }).firstTokenTime === 'number'
+    ? (t as { firstTokenTime: number }).firstTokenTime
+    : null
+  const completed = typeof t === 'object' && t !== null
+    && typeof (t as { completedTime?: unknown }).completedTime === 'number'
+    ? (t as { completedTime: number }).completedTime
+    : null
+  const turnNo = typeof (node as { turn?: unknown }).turn === 'number'
+    ? (node as { turn: number }).turn
+    : -1
+  return {
+    base: {
+      turn: turnNo,
+      ttftMs: stepStart !== null && firstToken !== null ? firstToken - stepStart : null,
+      streamMs: firstToken !== null && completed !== null ? completed - firstToken : null,
+    },
   }
 }
 
 /**
- * Probe every loaded reasoning block of a conversation snapshot.
+ * Probe every loaded reasoning block of a conversation snapshot, scoring each
+ * assistant node independently and aggregating. Per-turn results are cached by
+ * node identity, so a streaming delta re-scores only the in-flight partial.
+ * Pass `cache` to scope the per-turn memoization to one session's accumulator;
+ * without it a module-level cache is used.
  * @param snapshot - live conversation view.
+ * @param cache - optional per-session cache (from {@link grayTurnCacheFor}).
  */
-export function probeGraySession(snapshot: ConversationView): GrayProbe {
-  return probeGray(allReasoningBlocks(snapshot))
-}
+export function probeGraySession(
+  snapshot: ConversationView,
+  cache: WeakMap<object, CachedTurn> = grayTurnCacheFor(probeGraySession),
+): GrayProbe {
+  const allTexts: string[] = []
+  const probes: TurnProbe[] = []
 
-/** @deprecated Alias of {@link probeGraySession}. */
-export function probeGrayTurn(snapshot: ConversationView): GrayProbe {
-  return probeGraySession(snapshot)
+  for (const node of snapshot.nodes) {
+    if (node.kind !== 'assistant') continue
+    const texts = reasoningTexts(node.blocks ?? [])
+    if (texts.length === 0) continue
+    allTexts.push(...texts)
+    const { base } = timingOf(node)
+    const chars = texts.reduce((sum, text) => sum + text.length, 0)
+    const timing: TurnTiming = {
+      ...base,
+      chars,
+      ttftPerChar: base.ttftMs !== null ? base.ttftMs / Math.max(chars, 1) : null,
+    }
+    const cached = cache.get(node)
+    if (cached !== undefined && cached.texts === texts) {
+      probes.push(cached.probe)
+      continue
+    }
+    const probe = scoreTurn(texts, { turn: base.turn, live: false, timing })
+    cache.set(node, { texts, probe })
+    probes.push(probe)
+  }
+
+  if (snapshot.partial !== null) {
+    const texts = reasoningTexts(snapshot.partial.blocks)
+    if (texts.length > 0) {
+      allTexts.push(...texts)
+      // The partial carries no timing; its TTFT columns stay blank.
+      probes.push(scoreTurn(texts, { turn: -1, live: true, timing: { ...EMPTY_TIMING } }))
+    }
+  }
+
+  if (probes.length === 0) return EMPTY_PROBE
+
+  const style = styleOf(allTexts, listDensity(allTexts))
+
+  // Aggregate: any likely turn → likely; else any possible → possible.
+  let verdict: GrayVerdict = 'miss'
+  for (const probe of probes) {
+    if (probe.verdict === 'likely') { verdict = 'likely'; break }
+    if (probe.verdict === 'possible') verdict = 'possible'
+  }
+  const best = probes.reduce((a, b) => (b.score > a.score ? b : a), probes[0])
+  const imDoing = probes.reduce((sum, p) => sum + p.imDoing, 0)
+  const dirtyTokens = unique(probes.flatMap(p => [...p.dirtyTokens]))
+  const fingerprints = unique(probes.flatMap(p => [...p.fingerprints]))
+  const lengths = allTexts.map(text => text.length)
+  const mid = median(lengths)
+  const chunked = probes.length >= 3 && mid >= 30 && mid <= 800
+
+  return {
+    verdict,
+    confidence: clamp01(Math.max(0, best.score) / 8),
+    profile: best.imDoing > 0
+      ? 'im-doing'
+      : dirtyTokens.length > 0 || fingerprints.length > 0
+        ? 'fingerprint'
+        : best.listRatio >= 0.35
+          ? 'summary'
+          : 'none',
+    score: best.score,
+    imDoing,
+    summaryScore: style.listRatio,
+    chunked,
+    dirtyTokens,
+    fingerprints,
+    slowTtft: probes.some(p => isSlowTtft(p.timing)),
+    style,
+    turns: probes,
+  }
 }
 
 /** Empty probe (no reasoning loaded). */

@@ -48,72 +48,73 @@ NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)�
 
 ## <a id="gray-test"></a>灰测如何判定
 
-面板「灰测」一行（未命中 / 疑似 / 命中）的规则写在这里。实现：[`src/client/graytest.ts`](src/client/graytest.ts)，`GRAYTEST_VERSION = 2`。0813 词表（`We need` / `Let me` / `The user wants`）**完全不动**。
+面板「灰测」一行（未命中 / 疑似 / 命中）的规则写在这里。实现：[`src/client/graytest.ts`](src/client/graytest.ts)（信号表 [`gray-signals.ts`](src/client/gray-signals.ts)），`GRAYTEST_VERSION = 3`。0813 词表（`We need` / `Let me` / `The user wants`）**完全不动**。
 
-### 扫什么
+### 按轮判定，再聚合
 
-对**已加载会话里的全部 reasoning 块**计分：
+灰测是抽卡——一次抽中一轮。探针因此**逐轮独立计分**：
 
-1. 已翻页进来的历史 `assistant` 节点，按 `seq` 顺序；
-2. 当前流式 `partial`（如果有）。
+1. 每个已加载的 `assistant` 节点各得一个 `TurnProbe`（verdict、score、I'm doing 数、列表密度、TTFT…）；
+2. 流式 `partial` 单独算一条 `live` 轮（无 timing）；
+3. 会话聚合：任一轮 `likely` → 命中；否则任一轮 `possible` → 疑似；面板徽章取最高分轮的家族。
 
-与 0813 折叠同一窗口：还没 `loadOlder` 进来的更早历史不参与。`kind !== 'reasoning'` 的块（可见 `text`、工具调用等）**一律不算**——正文里的 `I'm doing` 也不算。
+这样第 3 轮抽中不会被前两轮 0813 的 `Let me` 稀释；反过来旧会话里偶然一次 `I'm doing` 也只影响那一轮。展开后「按轮」区列出每轮一行（`T<turn>` / `live` · verdict · I'm doing · TTFT · 吐字时长）。
 
-### 概要式（summary-shaped CoT）
+### 每轮怎么打分
 
-社区 2026-06 专家模式、2026-07 Web「摘要形 / 一段一段的总结性」灰测的结构指纹。
-
-对上述全部 reasoning 文本按空行切开，丢掉空行后：
-
-- **列表/标题行**：行首匹配 `-` / `*` / `•` / `1.` / `1)` / `#`–`###`；
-- **列表密度** `listRatio` = 这类行数 / 非空行数。
-
-判定：
-
-| 条件 | 结果 |
-|---|---|
-| `listRatio ≥ 0.35` | 概要形成立，**+2** |
-| 非空行 ≥ 3 且平均行长 < 140，**并且**已有 `I'm doing` | 也算概要形，**+2**（不与上一行叠两次） |
-| 只有短段落、没有 `I'm doing` | **不算**。0813 的 We-need 块同样短，不能单凭短就当灰测 |
-
-### 其它加分 / 减分
+对这一轮的 reasoning 文本（只算 `kind === 'reasoning'` 的块，可见 text 一律不算）：
 
 | 信号 | 分 | 说明 |
 |---|---:|---|
-| `I'm doing` / `I am doing` / 粘连的 `I'mdoing`（大小写不敏感）出现 ≥ 1 | **+4** | 2026-08-19/08-20 社区主指纹；0813 GA 据称没有 |
-| **最新一块** reasoning 的首行就是 `I'm doing…` | **+2** | 比块中出现更强 |
-| 有 `I'm doing` 且全程 `let me` = 0 | **+1** | 08-19 灰测常缺 Let me |
-| 概要形（上一节） | **+2** | |
-| 脏 token：`Nameeee`、`antml:thinking`、`<antml`、`EDMFunc`、`everydaycalculation` | **+2** | 08-19 讨论里从 reasoning 漏出 |
-| 后端串：`fp_…` / `fp_v4pro_…`（如 `fp_v4pro_20260812_prod`） | **+2** | 泄漏的部署指纹，当细节不是身份 |
-| ≥ 3 块、块长中位数 30–800，**并且**上面已有任一灰测信号 | **+1** | 社区「段尾停顿、下一段突然一大段」。快照没有时间戳，多块也是 0813 存长轨迹的方式，故只作加分 |
-| `let me` ≥ 2 且 `I'm doing` = 0 | **−3** | 典型 0813 Standard / 犹豫轨迹 |
+| `I'm doing` / `I am doing` / 粘连 `I'mdoing` ≥ 1 | **+4** | 08-19/20 社区主指纹 |
+| 本轮最新块首行即 `I'm doing…` | **+2** | 开场比块中出现更强 |
+| 有 `I'm doing` 且该轮 `let me` = 0 | **+1** | 灰测常缺 Let me |
+| **概要形**：列表/标题行占比 ≥ 35%（或 ≥ 15% 且有 `I'm doing`） | **+2** | 列表行 = 行首 `-` `*` `•` `1.` `1)` `#`–`###` |
+| 脏 token：`Nameeee`、`antml:thinking`、`<antml`、`EDMFunc`、`everydaycalculation` | **+2** | 从 reasoning 漏出 |
+| 后端串 `fp_…`（如 `fp_v4pro_20260812_prod`） | **+2** | 部署指纹，当细节不是身份 |
+| **TTFT 异常慢**（≥ 6 s，或 ≥ 300 ms/推理字符） | **+1** | 见下节；受网络影响，封顶 +1 |
+| 该轮 `let me` ≥ 2 且无 `I'm doing` | **−3** | 典型 0813 Standard |
 | 裸 `we` ≥ 3、无 `I'm doing`、非概要形 | **−1** | 典型 0813 Minimal |
 
-### 阈值与家族
+阈值：`score ≥ 5` → **命中**；`≥ 2` → **疑似**；否则未命中。家族展示：有 `I'm doing` → I'm doing；否则脏 token / `fp_` → 指纹；否则概要形 → 概要式。
 
-`score ≥ 5` → **命中**；`≥ 2` → **疑似**；否则 **未命中**。
+### TTFT / 吐字节奏（数据照显，评分保守）
 
-展示用家族（不改变分数）：有 `I'm doing` → `I'm doing`；否则有脏 token / `fp_` → 指纹；否则概要形成立 → 概要式；否则 —。
+社区反复强调灰测「首字很慢」「一段一段出」。宿主在 `assistant` 节点上记录 `timing.stepStartTime / firstTokenTime / completedTime`，插件据此给出每轮：
+
+- **TTFT** = firstToken − stepStart；
+- **吐字时长** stream = completed − firstToken；
+- **ms/字符** = TTFT ÷ 该轮推理字符数。
+
+这些时间戳包含排队与网络，**会被网络质量干扰**，所以只作弱加分（+1，且需 ≥ 6 s 或 ≥ 300 ms/字符才触发），原始数字始终显示——判断留给用户。流式 partial 没有时间戳，TTFT 列留空。
 
 ### 面板上的数字（命中与否都显示）
 
-这些是本地、无模型的描述统计，**不是**把会话贴上 Claude / Gemini / GPT 标签：
+本地、无模型的描述统计，**不是**把会话贴上 Claude / Gemini / GPT 标签：
 
 | 字段 | 含义 |
 |---|---|
-| I'm doing | 全部 reasoning 里该短语出现次数 |
-| 列表密度 | 上一节的 `listRatio` |
-| p50 | reasoning 块字符数的中位数 |
-| TTR | 小写分词后的 type-token ratio |
-| 词长 | 字母 token 的平均长度 |
+| I'm doing | 全部 reasoning 里出现次数 |
+| 列表密度 | 会话级列表行占比 |
+| p50 | reasoning 块字符数中位数 |
+| TTR | 小写分词 type-token ratio |
+| 词长 | 字母 token 平均长度 |
+| TTFT↑ | 任一轮触发慢首字时提示 |
+| 按轮 | 每轮 verdict / I'm doing / TTFT / 吐字 |
 | 脏 token / fp | 仅当扫到时显示原文 |
 
-文献上的家谱鉴定（[Bitton & Bitton, arXiv:2503.01659](https://arxiv.org/abs/2503.01659) 三分类器集成、Attestify 一类需训练语料的统计指纹）要离线权重和校准集，**不进这个浏览器插件**。
+### 词表与校准
+
+指纹（脏 token、开场词、fp 正则、列表行正则）集中在 [`src/client/gray-signals.ts`](src/client/gray-signals.ts)，新增社区报告改表即可。`pnpm calibrate` 用两组语料做回归：
+
+- **正样本**：社区引用的灰测推理（I'm-doing 开场 + 条目 CoT）→ 必须命中/疑似；
+- **负样本**：modeltest 冻结的 11 条 0813 轨迹聚合（含带少量 `I'm` 的 build 记录）→ 合成会话后**不得到达 likely**。
+
+文献上的家谱鉴定（[Bitton & Bitton, arXiv:2503.01659](https://arxiv.org/abs/2503.01659) 三分类器集成等）需要训练权重与校准集，**不进这个浏览器插件**。
 
 ### 诚实边界
 
-灰测命中只表示「已加载的 reasoning 像社区灰测簇」，**不能**据此断言路由到了哪家模型、哪个 checkpoint、哪台机器。词法标签是观测性指纹，不是身份。V4 Flash 也会在分数不变时改风格。
+灰测命中只表示「某轮 reasoning 像社区灰测簇」，**不能**据此断言路由到了哪家模型、哪个 checkpoint、哪台机器。词法标签与时间特征都是观测性指纹，不是身份。V4 Flash 也会在分数不变时改风格。
 
 更短的矩阵与 0813 对照见 [`docs/research.md`](docs/research.md)。
 
@@ -181,6 +182,8 @@ dsh web --patch 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe/cordis.patch.y
 ```sh
 pnpm install      # devDependencies：tsdown、lightningcss、typescript、react types
 pnpm typecheck    # 可选；tsc --noEmit
+pnpm test         # 计数引擎 + 灰测探针单元回归
+pnpm calibrate    # 灰测阈值校准（克隆 modeltest 冻结聚合做负样本回归）
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/client.js（浏览器包）
 ```
 

@@ -3,3 +3,4 @@ lib/
 *.tgz
 *.log
 .DS_Store
+.gray-corpus/

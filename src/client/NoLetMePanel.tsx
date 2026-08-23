@@ -21,6 +21,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatCount, type TrajectoryStats } from './stats.ts'
 import type { GrayProbe } from './graytest.ts'
+import type { TurnProbe } from './graytest.ts'
 import { GROUPS, PATTERNS, type Group, type Mode } from './keywords.ts'
 import type { HistoryState } from './session-store.ts'
 import type { NoLetMePanelProps } from './slots.ts'
@@ -416,6 +417,13 @@ function wordLen(value: number): string {
   return value === 0 ? '0' : value.toFixed(1)
 }
 
+/** Human milliseconds: 830ms / 6.2s; em-dash when unknown. */
+function ms(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '—'
+  if (value >= 10_000) return `${(value / 1000).toFixed(1)}s`
+  return `${Math.round(value)}ms`
+}
+
 /** Session-wide gray-test verdict plus style numbers. No prose captions. */
 function GraySection({ gray, t }: { gray: GrayProbe; t: NoLetMePanelProps['t'] }) {
   const profile = gray.profile !== 'none' && gray.verdict !== 'miss'
@@ -475,7 +483,38 @@ function GraySection({ gray, t }: { gray: GrayProbe; t: NoLetMePanelProps['t'] }
           ))}
         </p>
       )}
+      {gray.slowTtft && (
+        <div className={css.metrics}>
+          <span className={css.metric}>{t('gray.ttft')}↑</span>
+        </div>
+      )}
+      {gray.turns.length > 1 && (
+        <div className={css.patternList}>
+          {gray.turns.map((turn, index) => (
+            <GrayTurnRow key={index} turn={turn} t={t} />
+          ))}
+        </div>
+      )}
     </section>
+  )
+}
+
+/** One per-turn line in the gray section: verdict, I'm doing, list %, TTFT. */
+function GrayTurnRow({ turn, t }: { turn: TurnProbe; t: NoLetMePanelProps['t'] }) {
+  const label = turn.live ? 'live' : `T${Number.isFinite(turn.turn) && turn.turn >= 0 ? turn.turn : '?'}`
+  return (
+    <span className={css.patternItem} data-gray={turn.verdict}>
+      <span className={css.patternDot} data-gray={turn.verdict} aria-hidden="true" />
+      <span className={css.patternKey} title={turn.opener}>
+        {label} · {t(`gray.${turn.verdict}`)}
+      </span>
+      <span className={css.patternCount}>
+        {turn.imDoing > 0 ? `I'm ${turn.imDoing}` : ''}
+        {' '}
+        {ms(turn.timing.ttftMs) !== '—' ? `· TTFT ${ms(turn.timing.ttftMs)}` : ''}
+        {turn.timing.streamMs !== null ? ` · ${t('gray.stream')} ${ms(turn.timing.streamMs)}` : ''}
+      </span>
+    </span>
   )
 }
 

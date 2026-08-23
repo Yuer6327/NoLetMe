@@ -20,11 +20,14 @@ export type {
   BlockCounts, PatternCounts, ReasoningAnomaly, SessionCounts, TrajectoryStats, WordCounts,
 } from './stats.ts'
 export {
-  GRAYTEST_VERSION, allReasoningBlocks, currentTurnOf, emptyGrayProbe, probeGray, probeGraySession, probeGrayTurn,
+  GRAYTEST_VERSION, emptyGrayProbe, isSlowTtft, probeGraySession, scoreTurn,
 } from './graytest.ts'
 export type {
-  GrayEvidence, GrayProbe, GrayProfile, GrayVerdict, StyleStats,
+  GrayEvidence, GrayProbe, GrayProfile, GrayVerdict, StyleStats, TurnProbe, TurnTiming,
 } from './graytest.ts'
+export {
+  DIRTY_TOKENS, FINGERPRINT_RE, IM_DOING_RE, LIST_LINE_RE, OPENERS,
+} from './gray-signals.ts'
 export {
   EFFICIENT_PATTERNS, GROUPS, HESITANT_PATTERNS, KEYWORD_TAXONOMY_VERSION, NEUTRAL_PATTERNS, PATTERNS,
 } from './keywords.ts'

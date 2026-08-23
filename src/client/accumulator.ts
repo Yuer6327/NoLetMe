@@ -16,7 +16,7 @@
  */
 
 import type { ConversationNodeView, ConversationView } from './conversation.ts'
-import { probeGraySession } from './graytest.ts'
+import { grayTurnCacheFor, probeGraySession } from './graytest.ts'
 import {
   CLASSIFIER_VERSION, emptySessionCounts, foldBlock, toTrajectoryStats,
   type SessionCounts, type TrajectoryStats,
@@ -67,6 +67,8 @@ export class SessionStatsAccumulator {
   /** Visible-text diagnostic totals — block count + characters only. */
   private textBlocks = 0
   private textChars = 0
+  /** Per-session gray-turn memoization (keyed by assistant node identity). */
+  readonly grayTurnCache = grayTurnCacheFor(this)
 
   /**
    * Fold a snapshot into the accumulator. Detects compaction and only counts
@@ -123,7 +125,7 @@ export class SessionStatsAccumulator {
       live,
       snapshot.partial !== null,
       { textBlocks, textChars },
-      probeGraySession(snapshot),
+      probeGraySession(snapshot, this.grayTurnCache),
     )
   }
 
