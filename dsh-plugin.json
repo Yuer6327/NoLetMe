@@ -1,0 +1,28 @@
+{
+  "$schema": "urn:dsh-std:community-draft:dsh-plugin:0.15",
+  "manifestVersion": "0.15",
+  "id": "io.github.yuer6327.noletme",
+  "name": "NoLetMe",
+  "version": "0.3.2",
+  "facets": {
+    "host": {
+      "entry": "lib/std/host.js",
+      "apiVersion": "v1alpha1"
+    }
+  },
+  "requires": {
+    "contracts": []
+  },
+  "permissions": [],
+  "contributes": {
+    "commands": []
+  },
+  "subscriptions": [],
+  "license": "MIT",
+  "source": {
+    "repository": "https://github.com/Yuer6327/NoLetMe.git"
+  },
+  "compat": {
+    "hosts": ["dsh"]
+  }
+}

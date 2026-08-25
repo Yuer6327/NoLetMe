@@ -1,13 +1,17 @@
 /**
  * Standalone tsdown build for the NoLetMe plugin.
  *
- * Emits two artifacts into `lib/`:
+ * Emits three artifacts into `lib/`:
  *
  *  1. `lib/index.js` — the Node (host) half. The dsh Loader imports the
  *     package `main`; this half must exist and load cleanly for the
  *     client-modules scanner to see the package and serve its browser half.
  *
- *  2. `lib/client.js` — the browser half, shaped exactly like the harness's
+ *  2. `lib/std/host.js` — Community v0.15 FacetModule (`dsh-plugin.json`
+ *     `facets.host.entry`). Standard hosts (`@dsh-std/adapter-dsh`) load this
+ *     instead of the product Loader entry.
+ *
+ *  3. `lib/client.js` — the browser half, shaped exactly like the harness's
  *     own `clientBundle` preset: a closure-factory artifact that calls
  *     `window.__ModuleLoader__.load({ id, factory })`, resolves platform
  *     modules through the loader's frozen module table, and inlines CSS
@@ -86,6 +90,19 @@ export default defineConfig(() => [
     fixedExtension: false,
     dts: false,
     clean: true,
+  },
+  {
+    // dsh-std Community v0.15 host facet. Standard adapters load this as
+    // `facets.host.entry`; it must stay free of @deepseek-ai/* value imports.
+    name: `${PACKAGE_ID}/std-host`,
+    entry: { 'std/host': 'src/std/host.ts' },
+    outDir: 'lib',
+    format: ['esm'],
+    platform: 'node',
+    target: 'es2024',
+    fixedExtension: false,
+    dts: false,
+    clean: false,
   },
   {
     // Browser half: served at /plugins/<PACKAGE_ID>/client.js.

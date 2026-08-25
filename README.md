@@ -3,7 +3,7 @@
 
 # NoLetMe · dsh 推理轨迹面板
 
-[![npm version](https://img.shields.io/npm/v/dsh-noletme)](https://www.npmjs.com/package/dsh-noletme) [![Awesome dsh-plugin](https://camo.githubusercontent.com/d49867731e8dae50cfe6c3e25a3ef1d845d4e55aace9b1da5a31d47162f8e683/68747470733a2f2f617765736f6d652d6473682d706c7567696e2e636f6d2f62616467652e737667)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+[![npm version](https://img.shields.io/npm/v/dsh-noletme)](https://www.npmjs.com/package/dsh-noletme) [![dsh-std Community v0.15](https://img.shields.io/badge/dsh--std-Community%20v0.15-6a4cff)](https://github.com/Yuer6327/NoLetMe/blob/main/dsh-plugin.json) [![Awesome dsh-plugin](https://camo.githubusercontent.com/d49867731e8dae50cfe6c3e25a3ef1d845d4e55aace9b1da5a31d47162f8e683/68747470733a2f2f617765736f6d652d6473682d706c7567696e2e636f6d2f62616467652e737667)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 
 NoLetMe 是 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（dsh）网页端插件，在会话页右侧边缘挂载一块**实时推理关键词统计面板**。
 
@@ -164,7 +164,14 @@ dsh web --profile demo              # 或直接：dsh --profile demo
 >   dsh-noletme: true
 > ```
 
-**原理**：`cordis.patch.yml` 这层在组合里插入 `dsh-noletme` 行；`package.json` 的 `dsh.client` 块告诉网页壳加载浏览器包。
+**原理**：`cordis.patch.yml` 这层在组合里插入 `dsh-noletme` 行；`package.json` 的 `dsh.client` 块告诉网页壳加载浏览器包。包根另有 [dsh-std](https://github.com/Yan-Zero/dsh-std) Community v0.15 静态清单 `dsh-plugin.json`（`facets.host.entry` → `lib/std/host.js`），给 `@dsh-std/adapter-dsh` 等标准宿主做安装前兼容判定与 inventory；**面板本身仍走原生 `dsh.client`**——Community v0.15 / `browser.ui.dsh/v1alpha1` 目前只有 `SettingsSection` 与 `ToolCallView`，没有 `shell.overlay` 对应 surface，所以标准宿主不会重挂这块面板。
+
+标准宿主侧可先装 adapter 再装本包（adapter 扫描 profile 依赖里的 `dsh-plugin.json`）：
+
+```sh
+dsh plugin --profile demo add @dsh-std/adapter-dsh
+dsh plugin --profile demo add dsh-noletme
+```
 
 > **Windows 注意**：`cordis.patch.yml` 的行名用的是包名 `dsh-noletme`，因此只有把该包装入 profile 后悬浮层才生效。行名写成原始绝对路径会失败 —— ESM loader 拒绝 `D:\…` 入口名（`ERR_UNSUPPORTED_ESM_URL_SCHEME`）；Linux 下可用 `file://` URL 替代。
 
@@ -195,9 +202,9 @@ dsh web --patch 'D:/OneDrive/桌面/play/codes/dsh-plugin/NoLetMe/cordis.patch.y
 ```sh
 pnpm install      # devDependencies：tsdown、lightningcss、typescript、react types
 pnpm typecheck    # 可选；tsc --noEmit
-pnpm test         # 计数引擎 + 灰测探针单元回归
+pnpm test         # 计数引擎 + 灰测探针 + dsh-std Community v0.15 清单契约
 pnpm calibrate    # 灰测阈值校准（克隆 modeltest 冻结聚合做负样本回归）
-pnpm build        # tsdown → lib/index.js（node 半边）+ lib/client.js（浏览器包）
+pnpm build        # tsdown → lib/index.js（node 半边）+ lib/std/host.js（dsh-std facet）+ lib/client.js（浏览器包）
 ```
 
 客户端依赖（`@deepseek-ai/dsh-client-*`）声明为 `>=0.1.0-rc.7 <0.2.0 || >=0.1.1-rc.1 <0.2.0`，覆盖 rc.7、rc.8、0.1.1-rc.x 以及后续 0.1.x（semver 的 prerelease 比较器只匹配同 `[major,minor,patch]` 元组，`0.1.1-rc.1` 落在 `0.1.0` 的范围外，故需第二个分支）。dev 锁在 **0.1.1-rc.2**。浏览器包只 `require` rc.7∩rc.8∩0.1.1-rc.1∩0.1.1-rc.2 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；会话快照按结构子集读取（顶层 `nodes`/`partial`，必要时回退 `chat.legacy`），不把 runtime 打进冻结模块表。
@@ -213,6 +220,7 @@ pnpm build        # tsdown → lib/index.js（node 半边）+ lib/client.js（�
 ```
 src/
 ├── index.ts            # Node（宿主）半边 —— 空操作，满足 Loader
+├── std/host.ts         # dsh-std Community v0.15 FacetModule（无 @deepseek-ai/*）
 └── client/
     ├── index.ts        # 浏览器包入口（apply/inject）
     ├── apply.ts        # 注册 shell.overlay 入口 + 统计 store

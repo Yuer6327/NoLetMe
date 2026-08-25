@@ -6,6 +6,9 @@
  * the client-modules scanner can resolve it and serve the browser bundle at
  * `/plugins/dsh-noletme/client.js`. It intentionally registers nothing on the
  * host; any host-side state (settings, persistence) would land here later.
+ *
+ * Standard (dsh-std) hosts do not import this file. They load
+ * `src/std/host.ts` via `dsh-plugin.json` `facets.host.entry`.
  */
 
 import type { Context } from '@deepseek-ai/cordis'
