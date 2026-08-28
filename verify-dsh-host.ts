@@ -66,3 +66,23 @@ export function verifyLegacyChatSlice(snapshot: {
   void view.nodes
   void view.partial
 }
+
+/**
+ * 0.1.2-alpha.1 split: SessionFace is lifecycle-only; nodes live on
+ * `uiConversation` `views.get('chat').legacy`. Typed structurally so the
+ * probe still compiles against the 0.1.1-rc.2 lock (that package is not on npm).
+ */
+export function verifySplitConversationSlice(
+  session: Pick<ConversationSnapshot, 'sessionId'> & { openState: string; hasMore: boolean; loadingOlder: boolean },
+  conversation: {
+    views: {
+      get(target: 'chat'): { legacy: { nodes: ConversationSnapshot['nodes']; partial: ConversationSnapshot['partial'] } }
+    }
+  },
+): void {
+  const view = conversationViewOf(session, conversation)
+  if (view === undefined) throw new Error('split conversation slice missing sessionId')
+  void view.nodes
+  void view.partial
+  void view.openState
+}

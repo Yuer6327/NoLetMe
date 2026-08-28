@@ -6,10 +6,10 @@ export { apply, inject } from './apply.ts'
 export type { NoLetMeFace, NoLetMePanelProps } from './slots.ts'
 export { SessionStatsAccumulator, PERSISTENCE_VERSION } from './accumulator.ts'
 export type { PersistedSessionStats } from './accumulator.ts'
-export { conversationViewOf } from './conversation.ts'
+export { conversationViewOf, sessionCarriesNodes } from './conversation.ts'
 export type {
-  AssistantBlockView, ConversationNodeView, ConversationView, OpenStateView,
-  PartialAssistantView, SessionPort, SessionsPort,
+  AssistantBlockView, ConversationNodeView, ConversationPort, ConversationView,
+  OpenStateView, PartialAssistantView, SessionPort, SessionsPort,
 } from './conversation.ts'
 export { createStatsStore } from './session-store.ts'
 export type { HistoryState, StatsSnapshot, StatsStorage } from './session-store.ts'

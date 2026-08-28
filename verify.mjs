@@ -354,6 +354,79 @@ The user is asking for a quick fix. I think the issue is in the config.
   const acc = new (await import('./src/client/accumulator.ts')).SessionStatsAccumulator()
   acc.fold(legacyOnly)
   check('view: accumulator folds chat.legacy', acc.counts.replies, 1)
+
+  const { sessionCarriesNodes } = await import('./src/client/conversation.ts')
+  check('view: top-level carries nodes', sessionCarriesNodes(topLevel), true)
+  const alphaSession = {
+    sessionId: 's4',
+    openState: 'open',
+    hasMore: false,
+    loadingOlder: false,
+  }
+  check('view: 0.1.2 session face does not carry nodes', sessionCarriesNodes(alphaSession), false)
+  const views = {
+    get: target => target === 'chat'
+      ? {
+        legacy: {
+          nodes: [{ kind: 'assistant', seq: 4, blocks: [{ kind: 'reasoning', text: 'We need the split.' }] }],
+          partial: { blocks: [{ kind: 'reasoning', text: "Let's stream." }] },
+        },
+      }
+      : undefined,
+  }
+  const split = conversationViewOf(alphaSession, { views })
+  check('view: 0.1.2 views.get(chat).legacy nodes', split.nodes[0].seq, 4)
+  check('view: 0.1.2 views.get(chat).legacy partial', split.partial !== null, true)
+  check('view: 0.1.2 openState stays on session', split.openState, 'open')
+  const splitAcc = new (await import('./src/client/accumulator.ts')).SessionStatsAccumulator()
+  splitAcc.fold(split)
+  check('view: accumulator folds 0.1.2 chat.legacy', splitAcc.counts.replies, 1)
+
+  let conversationReady = false
+  let conversationSnap = {
+    views: {
+      get: target => target === 'chat'
+        ? { legacy: { nodes: [{ kind: 'assistant', seq: 5, blocks: [{ kind: 'reasoning', text: 'We need late bind.' }] }], partial: null } }
+        : undefined,
+    },
+  }
+  const conversationListeners = new Set()
+  const { createLiveConversation } = await import('./src/client/session-source.ts')
+  const alphaListeners = new Set()
+  const alphaFace = {
+    getSnapshot: () => alphaSession,
+    subscribe: fn => { alphaListeners.add(fn); return () => alphaListeners.delete(fn) },
+    loadOlder: async () => {},
+  }
+  const alphaSessions = {
+    list: {
+      getSnapshot: () => ({ current: 's4' }),
+      subscribe: fn => { return () => {} },
+    },
+    binding: id => id === 's4' ? { session: alphaFace } : undefined,
+  }
+  const liveSplit = createLiveConversation(alphaSessions, id => {
+    if (id !== 's4' || !conversationReady) return undefined
+    return {
+      snapshot: {
+        getSnapshot: () => conversationSnap,
+        subscribe: fn => { conversationListeners.add(fn); return () => conversationListeners.delete(fn) },
+      },
+    }
+  })
+  check('view: 0.1.2 live starts empty without uiConversation', liveSplit.getSnapshot().nodes.length, 0)
+  conversationReady = true
+  await new Promise(resolve => setTimeout(resolve, 80))
+  check('view: 0.1.2 live attaches late uiConversation', liveSplit.getSnapshot().nodes[0].seq, 5)
+  conversationSnap = {
+    views: {
+      get: target => target === 'chat'
+        ? { legacy: { nodes: [{ kind: 'assistant', seq: 6, blocks: [{ kind: 'reasoning', text: 'We need a delta.' }] }], partial: null } }
+        : undefined,
+    },
+  }
+  for (const fn of [...conversationListeners]) fn()
+  check('view: 0.1.2 live follows conversation publishes', liveSplit.getSnapshot().nodes[0].seq, 6)
 }
 
 // --- 10. Reasoning-health anomaly: text-without-reasoning is reported, never counted ---

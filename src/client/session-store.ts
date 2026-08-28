@@ -22,7 +22,7 @@
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { createLiveConversation } from './session-source.ts'
 import { PERSISTENCE_VERSION, SessionStatsAccumulator } from './accumulator.ts'
-import type { ConversationView, SessionPort, SessionsPort } from './conversation.ts'
+import type { ConversationPort, ConversationView, SessionPort, SessionsPort } from './conversation.ts'
 import type { TrajectoryStats } from './stats.ts'
 
 /** State of the full-history synchronization for the current session. */
@@ -69,13 +69,15 @@ function legacyStorageKey(sessionId: string): string {
  * Build the stats store over the sessions service.
  * @param sessions - `ctx.sessions`.
  * @param storage - durable key/value store (defaults to window.localStorage).
+ * @param conversationOf - optional 0.1.2+ `uiConversation.binding(id)` lookup.
  * @returns a HostObservable the panel consumes as `useStats`.
  */
 export function createStatsStore(
   sessions: SessionsPort,
   storage: StatsStorage = (typeof window === 'undefined' ? undefined : window.localStorage) as StatsStorage,
+  conversationOf?: (id: string) => ConversationPort | undefined,
 ): HostObservable<StatsSnapshot> {
-  const live = createLiveConversation(sessions)
+  const live = createLiveConversation(sessions, conversationOf)
   const listeners = new Set<() => void>()
   const accCache = new Map<string, SessionStatsAccumulator>()
 

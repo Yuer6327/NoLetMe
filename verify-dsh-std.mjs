@@ -46,6 +46,18 @@ checkTrue('package.json files includes dsh-plugin.json', Array.isArray(pkg.files
 checkTrue('keywords includes dsh-std', Array.isArray(pkg.keywords) && pkg.keywords.includes('dsh-std'))
 checkTrue('keywords includes community-v0.15', Array.isArray(pkg.keywords) && pkg.keywords.includes('community-v0.15'))
 checkTrue('native dsh.client retained', pkg.dsh?.client?.platform === 'web' && pkg.dsh?.client?.immediately === true)
+const inject = pkg.dsh?.client?.inject
+checkTrue('dsh.client.inject is a string array', Array.isArray(inject) && inject.every(item => typeof item === 'string'))
+checkTrue(
+  'dsh.client.inject omits removed dsh-client-runtime',
+  Array.isArray(inject) && !inject.includes('@deepseek-ai/dsh-client-runtime'),
+)
+checkTrue(
+  'dsh.client.inject still waits for locale + ui-layout',
+  Array.isArray(inject)
+    && inject.includes('@deepseek-ai/dsh-client-locale')
+    && inject.includes('@deepseek-ai/dsh-client-ui-layout'),
+)
 
 const idOk = /^[a-z][a-z0-9]*(?:[.-][a-z0-9][a-z0-9-]*)+$/.test(manifest.id)
 checkTrue('id is a namespaced id', idOk)
