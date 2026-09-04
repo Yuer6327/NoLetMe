@@ -8,7 +8,7 @@
  *  - 0.1.0-rc.7 / rc.8 / 0.1.1-rc.x: `nodes` / `partial` / `openState` live on
  *    the Session snapshot (`dsh-client-runtime`). rc.8 also mirrors them at
  *    `chat.legacy`.
- *  - 0.1.2-alpha.1 (GitHub-only at time of writing): `dsh-client-runtime` is
+ *  - 0.1.2-rc.1 / 0.1.3-alpha.1 (and 0.1.2-alpha.x): `dsh-client-runtime` is
  *    gone. SessionFace is lifecycle-only (`openState` / `hasMore` /
  *    `loadOlder`). Conversation nodes are assembled by `uiConversation` and
  *    published as `views.get('chat').legacy`.

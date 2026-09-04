@@ -237,8 +237,12 @@ export function NoLetMePanel({ useStats, t }: NoLetMePanelProps) {
           <span className={css.chipMode} data-gray="likely">{t('gray.likely')}</span>
         ) : stats?.gray.verdict === 'possible' ? (
           <span className={css.chipMode} data-gray="possible">{t('gray.possible')}</span>
-        ) : mode !== undefined ? (
-          <span className={css.chipMode}>{t(`mode.${mode}`)}</span>
+        ) : mode === 'efficient' ? (
+          <span className={css.chipMode}>{t('mode.efficient')}</span>
+        ) : mode === 'hesitant' ? (
+          <span className={css.chipMode}>{t('mode.hesitant')}</span>
+        ) : mode === 'neutral' ? (
+          <span className={css.chipMode}>{t('mode.neutral')}</span>
         ) : null}
       </button>
 

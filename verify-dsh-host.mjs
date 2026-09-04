@@ -16,7 +16,6 @@ if (!Array.isArray(platformModules) || platformModules.length === 0) {
 const minimum = '0.1.0-rc.7'
 const packages = [
   '@deepseek-ai/dsh-client-locale',
-  '@deepseek-ai/dsh-client-runtime',
   '@deepseek-ai/dsh-client-ui-layout',
   '@deepseek-ai/dsh-client-ui-primitives',
   '@deepseek-ai/dsh-client-ui-slots',

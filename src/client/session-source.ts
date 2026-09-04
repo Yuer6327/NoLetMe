@@ -9,7 +9,7 @@
  *
  * The host snapshot is projected through {@link conversationViewOf}:
  * rc.7–0.1.1 publish `nodes`/`partial` on the session object (with
- * `chat.legacy` as the rc.8 mirror); 0.1.2-alpha.1 keeps lifecycle on the
+ * `chat.legacy` as the rc.8 mirror); 0.1.2+ keeps lifecycle on the
  * session object and moves nodes to `uiConversation` `chat.legacy`.
  *
  * The observable re-targets whenever the session list's `current` selection

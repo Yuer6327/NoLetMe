@@ -7,11 +7,39 @@
  * still exist on the typed faces.
  */
 
-import type {
-  ConversationSnapshot, ISessions, SessionFace,
-} from '@deepseek-ai/dsh-client-runtime/client'
 import { conversationViewOf, type SessionPort, type SessionsPort } from './src/client/conversation.ts'
 import type { StatsSnapshot } from './src/client/session-store.ts'
+
+/**
+ * Structural host faces. Through 0.1.1 these lived on
+ * `@deepseek-ai/dsh-client-runtime/client`; 0.1.2 deleted that package and
+ * split them across `dsh-api-session-controller` (ISessions / SessionFace)
+ * and `dsh-client-ui-conversation` (ConversationSnapshot). The probe stays
+ * structural so it typechecks against either lock without pulling the whole
+ * 0.1.2 peer tree.
+ */
+interface ConversationSnapshot {
+  readonly sessionId: string
+  readonly nodes: readonly { readonly kind: string; readonly seq: number }[]
+  readonly partial: { readonly blocks: readonly unknown[] } | null
+  readonly openState?: string
+  readonly hasMore?: boolean
+  readonly loadingOlder?: boolean
+}
+
+interface SessionFace {
+  getSnapshot(): unknown
+  subscribe(fn: () => void): () => void
+  loadOlder(): Promise<void>
+}
+
+interface ISessions {
+  readonly list: {
+    getSnapshot(): { readonly current?: string }
+    subscribe(fn: () => void): () => void
+  }
+  binding(id: string): { readonly session: SessionFace } | undefined
+}
 
 // Public consumers compiled against the pre-versioned store can still provide
 // the original shape; newly added history fields remain optional at the seam.
@@ -68,9 +96,9 @@ export function verifyLegacyChatSlice(snapshot: {
 }
 
 /**
- * 0.1.2-alpha.1 split: SessionFace is lifecycle-only; nodes live on
+ * 0.1.2+ split: SessionFace is lifecycle-only; nodes live on
  * `uiConversation` `views.get('chat').legacy`. Typed structurally so the
- * probe still compiles against the 0.1.1-rc.2 lock (that package is not on npm).
+ * probe compiles without `@deepseek-ai/dsh-client-runtime` (deleted in 0.1.2).
  */
 export function verifySplitConversationSlice(
   session: Pick<ConversationSnapshot, 'sessionId'> & { openState: string; hasMore: boolean; loadingOlder: boolean },
