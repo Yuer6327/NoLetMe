@@ -133,7 +133,7 @@ TTFT 仍只作 +1 弱加分，原始数字与画像始终显示——判断留�
 
 ## 安装
 
-**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8、0.1.1-rc.x、npm 上的 0.1.2-rc.1，以及 GitHub 上的 0.1.3-alpha.1**。更早的 rc 版本未保证兼容。
+**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8、0.1.1-rc.x、npm 上的 0.1.2-rc.1，以及 GitHub 上的 0.1.3-alpha.2**。更早的 rc 版本未保证兼容。
 
 **方式一 · npm 安装（推荐）** —— `dsh-noletme` 已发布到 npm，预构建安装，无需 `allowBuilds` 审批
 
@@ -207,9 +207,9 @@ pnpm calibrate    # 灰测阈值校准（克隆 modeltest 冻结聚合做负样�
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/std/host.js（dsh-std facet）+ lib/client.js（浏览器包）
 ```
 
-客户端依赖（`@deepseek-ai/dsh-client-*`）声明为 `>=0.1.0-rc.7 <0.2.0 || >=0.1.1-rc.1 <0.2.0 || >=0.1.2-rc.1 <0.2.0`，覆盖 rc.7、rc.8、0.1.1-rc.x、0.1.2-rc.1 以及后续 0.1.x（semver 的 prerelease 比较器只匹配同 `[major,minor,patch]` 元组，`0.1.1-rc.1` / `0.1.2-rc.1` 落在前一元组的范围外，故需额外分支）。dev 锁在 **0.1.2-rc.1**（npm `@deepseek-ai/dsh` 的 `latest`/`next`）。浏览器包只 `require` rc.7∩rc.8∩0.1.1∩0.1.2∩0.1.3-alpha.1 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；**不** `require` 0.1.2 新增的 `dsh-client-store`（旧宿主种子表没有它）。会话快照按结构子集读取：rc.7–0.1.1 用顶层 `nodes`/`partial`（必要时回退 `chat.legacy`）；0.1.2+ 把节点从 `SessionFace` 拆到 `uiConversation.views.get('chat').legacy`，插件惰性合并两路，且 `dsh.client.inject` 不再列出已删除的 `dsh-client-runtime`（否则新宿主组图会失败）。旧宿主仍通过 cordis `sessions` 服务等待，不依赖 graph 边。0.1.3-alpha.1 的 Session persistence API / Session format v2 是宿主侧破坏性变更，不改这块 overlay 契约。
+客户端依赖（`@deepseek-ai/dsh-client-*`）声明为 `>=0.1.0-rc.7 <0.2.0 || >=0.1.1-rc.1 <0.2.0 || >=0.1.2-rc.1 <0.2.0`，覆盖 rc.7、rc.8、0.1.1-rc.x、0.1.2-rc.1 以及后续 0.1.x（semver 的 prerelease 比较器只匹配同 `[major,minor,patch]` 元组，`0.1.1-rc.1` / `0.1.2-rc.1` 落在前一元组的范围外，故需额外分支）。dev 锁在 **0.1.2-rc.1**（npm `@deepseek-ai/dsh` 的 `latest`/`next`）。浏览器包只 `require` rc.7∩rc.8∩0.1.1∩0.1.2∩0.1.3-alpha.1∩0.1.3-alpha.2 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；**不** `require` 0.1.2 新增的 `dsh-client-store`（旧宿主种子表没有它）。会话快照按结构子集读取：rc.7–0.1.1 用顶层 `nodes`/`partial`（必要时回退 `chat.legacy`）；0.1.2+ 把节点从 `SessionFace` 拆到 `uiConversation.views.get('chat').legacy`，插件惰性合并两路，且 `dsh.client.inject` 不再列出已删除的 `dsh-client-runtime`（否则新宿主组图会失败）。旧宿主仍通过 cordis `sessions` 服务等待，不依赖 graph 边。0.1.3-alpha.1 的 Session persistence API / Session format v2 、0.1.3-alpha.2 的默认工具 / persona 前后缀拆分、subprocess handle 去掉 pid 均是宿主侧变更，不改这块 overlay 契约。
 
-> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（client 包 `latest` 仍可能是 `0.0.1-rc.1`，而 `@deepseek-ai/dsh` 的 `latest`/`next` 现为 0.1.2-rc.1；0.1.3-alpha.1 目前只在 GitHub）。升级依赖时请显式写上面的范围或具体 rc，**不要用 `@latest`**。
+> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（client 包 `latest` 仍可能是 `0.0.1-rc.1`，而 `@deepseek-ai/dsh` 的 `latest`/`next` 现为 0.1.2-rc.1；0.1.3-alpha.x 目前只在 GitHub）。升级依赖时请显式写上面的范围或具体 rc，**不要用 `@latest`**。
 
 > dsh CLI 升级后无需重装 profile：基底包（`dsh-base`、`dsh-web-app` 等）按"安装优先"从 CLI 自身解析，profile 里的行会自动跟到新版本。
 
