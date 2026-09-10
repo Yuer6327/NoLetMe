@@ -17,9 +17,10 @@
  *     modules through the loader's frozen module table, and inlines CSS
  *     Modules (compiled by lightningcss, injected as a `<style data-plugin>`).
  *
- * The externals list is the rc.7 ∩ rc.8 ∩ 0.1.1 ∩ 0.1.2 ∩ 0.1.3-alpha.1 platform
- * seed (`platform-modules.json`). 0.1.2 adds `dsh-client-store` to the seed;
- * requiring it would miss on rc.7–0.1.1, so it stays out of the bundle.
+ * The externals list is the rc.7 ∩ rc.8 ∩ 0.1.1 ∩ 0.1.2 ∩ 0.1.3 ∩ 0.1.5 platform
+ * seed (`platform-modules.json`). 0.1.2 adds `dsh-client-store` to the seed and
+ * 0.1.5 adds `dsh-client-ui-dockkit`; requiring either would miss on older
+ * hosts, so they stay out of the bundle.
  * Every other `@deepseek-ai/*` value import is a build error (the purity gate):
  * the module table cannot answer a specifier it does not know.
  */

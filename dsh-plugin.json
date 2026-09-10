@@ -3,7 +3,7 @@
   "manifestVersion": "0.15",
   "id": "io.github.yuer6327.noletme",
   "name": "NoLetMe",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "facets": {
     "host": {
       "entry": "lib/std/host.js",
