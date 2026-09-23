@@ -8,11 +8,12 @@
  *  - 0.1.0-rc.7 / rc.8 / 0.1.1-rc.x: `nodes` / `partial` / `openState` live on
  *    the Session snapshot (`dsh-client-runtime`). rc.8 also mirrors them at
  *    `chat.legacy`.
- *  - 0.1.2-rc.1 / 0.1.3-alpha.x / 0.1.5-rc.x / 0.1.6-alpha.1: `dsh-client-runtime` is
- *    gone. SessionFace is lifecycle-only (`openState` / `hasMore` /
- *    `loadOlder`). Conversation nodes are assembled by `uiConversation` and
- *    published as `views.get('chat').legacy` (0.1.6 added `turnTimings` /
- *    `turnEnds` beside `nodes` / `partial`; the counting slice is unchanged).
+ *  - 0.1.2-rc.1 / 0.1.3-alpha.x / 0.1.5-rc.x / 0.1.6-alpha.1 / 0.1.7-rc.1:
+ *    `dsh-client-runtime` is gone. SessionFace is lifecycle-only (`openState` /
+ *    `hasMore` / `loadOlder`). Conversation nodes are assembled by
+ *    `uiConversation` and published as `views.get('chat').legacy` (0.1.6 added
+ *    `turnTimings` / `turnEnds` beside `nodes` / `partial`; the counting slice
+ *    is unchanged and 0.1.7 did not touch it).
  *
  * Reading the slice structurally — and merging a separate conversation
  * snapshot when the session object no longer carries nodes — keeps the plugin
