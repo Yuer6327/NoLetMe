@@ -12,23 +12,23 @@ importers:
         specifier: ~4.0.4
         version: 4.0.4
       '@deepseek-ai/dsh-brand':
-        specifier: 0.1.7-rc.1
-        version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-locale':
-        specifier: 0.1.7-rc.1
-        version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-store':
-        specifier: 0.1.7-rc.1
-        version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-layout':
-        specifier: 0.1.7-rc.1
-        version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-primitives':
-        specifier: 0.1.7-rc.1
-        version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-slots':
-        specifier: 0.1.7-rc.1
-        version: 0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)
+        specifier: 0.1.7-rc.2
+        version: 0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)
       '@types/node':
         specifier: ^22.0.0
         version: 22.20.1
@@ -68,33 +68,33 @@ packages:
   '@deepseek-ai/cosmokit@1.8.5':
     resolution: {integrity: sha512-LXsrlem9z8dq4sLflj2yuCuYX7KqhdzF5hZly3eZyuTo8d6oDSOXuEgC5DbQWKW+lksm6zmOutQLsP/ma6wR6A==}
 
-  '@deepseek-ai/dsh-brand@0.1.7-rc.1':
-    resolution: {integrity: sha512-KvfCuVAiosEyqb37LbGwi2Li90VZXcIDaqM+CxV9qNoyQmGezh8UjFkNQENieT2hPzfQ4CiADbA3vJeLpeQm/g==}
+  '@deepseek-ai/dsh-brand@0.1.7-rc.2':
+    resolution: {integrity: sha512-cvcvlNRuiFqZNNqyxdu7wcpiBjd9xa/0MpuhRvee43zBp9uED2p5JolZr5/2EKJf57gYx9k9bedb+Zbyiqnpkw==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.4
 
-  '@deepseek-ai/dsh-client-locale@0.1.7-rc.1':
-    resolution: {integrity: sha512-7DmI05k+FUZaDk0SEqJahDQn75SoENuUeoFjPG1nzXXxU8xq1KsE5kWgKlwtbOTCpbvn/ax4F5FhRjZnpJZQkg==}
+  '@deepseek-ai/dsh-client-locale@0.1.7-rc.2':
+    resolution: {integrity: sha512-zkRt/JrBvS7w1TPi/dOo0QCqjkcAApq7nNoeIL2lX0VlzwHD86Hrg/n/YJJlg1i0nvOEtZDibR9FGwa/X2wpvA==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.4
 
-  '@deepseek-ai/dsh-client-store@0.1.7-rc.1':
-    resolution: {integrity: sha512-hhFQYtpxs2Fi2emEfWZ9LUu4HVZ+M65NMmHuzdOhnOlTq7Q3ch8DHaqkAKCV+USW4XnaHJyxtpv4qdMjaxFrHw==}
+  '@deepseek-ai/dsh-client-store@0.1.7-rc.2':
+    resolution: {integrity: sha512-8nF4gqy/3yvSN3KsuHX61DVP1Z2YjC93wkB2uGVS5xg4iyD1KgCqWB2S+fVAdQ7END9PDzWhZTk71AYnkSh7LA==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.4
 
-  '@deepseek-ai/dsh-client-ui-layout@0.1.7-rc.1':
-    resolution: {integrity: sha512-54ZOsCsCxvVgvPUndn5RqKWyIe7lmbGX3Y1nDj+Alah05ibGrmDby2up89zlYTMbN1JBiVutic1lZwgw5aJl/g==}
+  '@deepseek-ai/dsh-client-ui-layout@0.1.7-rc.2':
+    resolution: {integrity: sha512-od2Q5A3SxiOO5V1Mi35lmm64LQLNjew+HgigjTC9oLpCkb+es739VQeWPdUnzWP/+4WVIyQ2+SbHMLZiyB5jVg==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.4
 
-  '@deepseek-ai/dsh-client-ui-primitives@0.1.7-rc.1':
-    resolution: {integrity: sha512-CmPQHZ/C/dKeYU/7ABpXJSNr/HjSdpA639S5w2Xi09FDFoORWBFHMMGrQ+p5Ur1Mez2WddTNs2W5zFCepXNP/Q==}
+  '@deepseek-ai/dsh-client-ui-primitives@0.1.7-rc.2':
+    resolution: {integrity: sha512-ymIUil9ivHcIDgaAmF88lOygC7dJ0UsUgdbIvXT5bymPZDzvDJIoorOKhlMsCqPEG1ZawCMVhUatnIPi4xdlMQ==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.4
 
-  '@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.1':
-    resolution: {integrity: sha512-w6rj/Jl8Q3RUJMVxrN6xea1CjdyXomAm7M2/CVbbxXMf582ap20lfK/Hj9qL/WTorri8kRVg78AxS+6AiUJOKw==}
+  '@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.2':
+    resolution: {integrity: sha512-83cd5owHfNMGIc5THEkMw1L6iKj/tl2m3thQhVGWp2p3Y+QAPh2hIrIQCNI+i97cH+7SsIsUIoCIoB0mu51aqQ==}
     peerDependencies:
       '@deepseek-ai/cordis': ~4.0.4
 
@@ -605,28 +605,28 @@ snapshots:
 
   '@deepseek-ai/cosmokit@1.8.5': {}
 
-  '@deepseek-ai/dsh-brand@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)':
+  '@deepseek-ai/dsh-brand@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4
 
-  '@deepseek-ai/dsh-client-locale@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)':
+  '@deepseek-ai/dsh-client-locale@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4
       '@deepseek-ai/schemastery': 3.18.4
 
-  '@deepseek-ai/dsh-client-store@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)':
+  '@deepseek-ai/dsh-client-store@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4
 
-  '@deepseek-ai/dsh-client-ui-layout@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)':
+  '@deepseek-ai/dsh-client-ui-layout@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4
 
-  '@deepseek-ai/dsh-client-ui-primitives@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)':
+  '@deepseek-ai/dsh-client-ui-primitives@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4
 
-  '@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.1(@deepseek-ai/cordis@4.0.4)':
+  '@deepseek-ai/dsh-client-ui-slots@0.1.7-rc.2(@deepseek-ai/cordis@4.0.4)':
     dependencies:
       '@deepseek-ai/cordis': 4.0.4
 

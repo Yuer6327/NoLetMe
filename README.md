@@ -133,7 +133,7 @@ TTFT 仍只作 +1 弱加分，原始数字与画像始终显示——判断留�
 
 ## 安装
 
-**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8、0.1.1-rc.x、0.1.2-rc.1、0.1.3-alpha.x、0.1.5-rc.x、0.1.6-alpha.1，以及 0.1.7-rc.1**。更早的 rc 版本未保证兼容。
+**前置条件**：已安装 dsh CLI ≥ **0.1.0-rc.7**（`dsh --version`），并已建好目标 profile。NoLetMe 按 dsh **0.1.x** 的客户端契约构建：同时兼容 **rc.7、rc.8、0.1.1-rc.x、0.1.2-rc.1、0.1.3-alpha.x、0.1.5-rc.x、0.1.6-alpha.1，以及 0.1.7 全线（alpha.1、alpha.2、rc.1、rc.2）**。更早的 rc 版本未保证兼容。逐版本的精确兼容声明（DSH STORE `dsh.compatibility.dshReleases` 矩阵）以本仓库 `package.json` 为准：0.1.6-alpha.1 与 0.1.7-rc.1 为真实 Profile 实测，0.1.7-alpha.1、0.1.7-alpha.2、0.1.7-rc.2 为静态契约探针实测（平台种子表、`shell.overlay`、`chat.legacy` 切片、SessionFace 四项逐版本比对通过）。
 
 **方式一 · npm 安装（推荐）** —— `dsh-noletme` 已发布到 npm，预构建安装，无需 `allowBuilds` 审批
 
@@ -207,7 +207,7 @@ pnpm calibrate    # 灰测阈值校准（克隆 modeltest 冻结聚合做负样�
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/std/host.js（dsh-std facet）+ lib/client.js（浏览器包）
 ```
 
-客户端依赖（`@deepseek-ai/dsh-client-*`）只用于**构建与类型检查**，精确锁在 **0.1.7-rc.1**（npm `@deepseek-ai/dsh` 的 `next` 标签；`latest` 现为 0.1.5-rc.3、`alpha` 为 0.1.7-alpha.2）。它们不进运行时产物——`lib/client.js` 除宿主种子模块外不带任何 `@deepseek-ai/*` 依赖，**跨版本兼容由结构读取保证，而不是由依赖范围保证**。浏览器包只 `require` rc.7∩rc.8∩0.1.1∩0.1.2∩0.1.3∩0.1.5∩0.1.6∩0.1.7 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；宿主种子表自 0.1.6 起扩到 9 项（新增 `dsh-client-ui-dockkit`，0.1.7 未变），那 7 项始终是子集，所以既**不** `require` 0.1.2 新增的 `dsh-client-store`，也**不** `require` `dsh-client-ui-dockkit`（旧宿主种子表没有它们）。会话快照按结构子集读取：rc.7–0.1.1 用顶层 `nodes`/`partial`（必要时回退 `chat.legacy`）；0.1.2+ 把节点从 `SessionFace` 拆到 `uiConversation.views.get('chat').legacy`（0.1.6/0.1.7 下该切片为 `{nodes, turnTimings, turnEnds, partial, runningCalls}`，`nodes`/`partial` 语义未变，新增的两个 Map 未被用到），插件惰性合并两路，且 `dsh.client.inject` 不再列出已删除的 `dsh-client-runtime`（否则新宿主组图会失败）。旧宿主仍通过 cordis `sessions` 服务等待，不依赖 graph 边。
+客户端依赖（`@deepseek-ai/dsh-client-*`）只用于**构建与类型检查**，精确锁在 **0.1.7-rc.2**（npm `@deepseek-ai/dsh` 的 `next` 标签；`latest` 现为 0.1.5-rc.3、`alpha` 为 0.1.7-alpha.2）。它们不进运行时产物——`lib/client.js` 除宿主种子模块外不带任何 `@deepseek-ai/*` 依赖，**跨版本兼容由结构读取保证，而不是由依赖范围保证**。浏览器包只 `require` rc.7∩rc.8∩0.1.1∩0.1.2∩0.1.3∩0.1.5∩0.1.6∩0.1.7 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；宿主种子表自 0.1.6 起扩到 9 项（新增 `dsh-client-ui-dockkit`，0.1.7 未变），那 7 项始终是子集，所以既**不** `require` 0.1.2 新增的 `dsh-client-store`，也**不** `require` `dsh-client-ui-dockkit`（旧宿主种子表没有它们）。会话快照按结构子集读取：rc.7–0.1.1 用顶层 `nodes`/`partial`（必要时回退 `chat.legacy`）；0.1.2+ 把节点从 `SessionFace` 拆到 `uiConversation.views.get('chat').legacy`（0.1.6/0.1.7 下该切片为 `{nodes, turnTimings, turnEnds, partial, runningCalls}`，`nodes`/`partial` 语义未变，新增的两个 Map 未被用到），插件惰性合并两路，且 `dsh.client.inject` 不再列出已删除的 `dsh-client-runtime`（否则新宿主组图会失败）。旧宿主仍通过 cordis `sessions` 服务等待，不依赖 graph 边。
 
 **0.1.7 新增的插件版本闸门对本插件不生效。** 宿主在安装与启动时调用 `evaluatePluginCompatibility()`，把插件 `package.json` 里**声明为 `peerDependencies` 的 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` 范围**与运行中的 dsh 版本比对（`semver.satisfies`，prerelease 参与比较；`workspace:^`/`~`/`*` 视作当前运行时），不满足则拒绝安装/启动，并给出 `dsh plugin allow-version <pkg@version> --dsh-version <exact> --accept-risk` 这一**精确到 `插件@版本 × dsh 版本`** 的例外入口（`version-exemptions` 可查、`revoke-version` 可撤）。该检查**只在插件存在 `peerDependencies` 字段时才生效**——没有该字段直接返回 `undefined`，不做任何校验。NoLetMe 不声明任何 dsh peer，因此不会被这个闸门拦住；这也是刻意的：它的兼容性来自上面的结构读取，而不是版本区间。
 
@@ -215,7 +215,9 @@ pnpm build        # tsdown → lib/index.js（node 半边）+ lib/std/host.js（
 
 **0.1.7-rc.1 实测（0.3.8）。** 对已安装的 0.1.7-rc.1 逐项核对：宿主前端种子表仍为 9 项（与 0.1.6 相同，本插件声明的 7 项是子集）；`shell.overlay` 声明与 `chat.legacy` 切片（`nodes`/`partial`/`turnTimings`/`turnEnds`/`runningCalls`）、`SessionFace = ISession & ObservableSnapshot<SessionSnapshot>` 均未变；`evaluatePluginCompatibility()` 对 `dsh-noletme@0.3.8` 返回 `undefined`（无 `peerDependencies` → 跳过），并用对照组确认 `<0.1.6`、`^0.2.0` 会被判为 `BLOCK`。实机 `dsh --profile web --port 3160` 下 boot manifest 条目为 `{id: dsh-noletme, inject: ['@deepseek-ai/dsh-client-locale','@deepseek-ai/dsh-client-ui-layout'], immediately: true}`，包以 `plugins/??dsh-noletme/client.js&rev=…` 合并形式下发（94540 B，只 `require` `react` 与 `react/jsx-runtime`）；headless Edge（CDP）面板渲染成功、卡片 302×117 ↔ 胶囊 97×38（radius 10px）形变通过、**零 console 报错**。**未覆盖**：真实会话的计数链路——0.1.7 的 web profile 停在首次运行的 API Key 配置引导上，没有可打开的会话，因此空状态（`暂无会话`）之外的计数未经实机验证，逻辑正确性仍由 `pnpm test` 的折叠/灰测单测覆盖。
 
-> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（多数 client 包 `latest` 仍可能是 `0.0.1-rc.1`，而 `@deepseek-ai/dsh` 的 `latest` 现为 0.1.5-rc.3、`next` 为 0.1.7-rc.1、`alpha` 为 0.1.7-alpha.2）。升级依赖时请显式写具体版本或 `alpha`/`next` 标签，**不要用 `@latest`**。
+**0.1.7 全线静态契约探针（0.3.9）。** 对 npm 发行物逐版本下载比对 `0.1.7-alpha.1`、`0.1.7-alpha.2`、`0.1.7-rc.1`、`0.1.7-rc.2` 四个版本中本插件依赖的全部契约面：`dsh-web-frontend` 平台种子表（9 项，本插件 `require` 的 7 项齐全）、`dsh-client-ui-layout` 的 `shell.overlay` 槽声明（仍为 `{kind:'list', scope:'root'}`）、`dsh-client-ui-chat` 的 `chat.legacy` 切片（仍为 `{nodes, turnTimings, turnEnds, partial, runningCalls}`）、`dsh-api-session-controller` 的 `SessionFace = ISession & ObservableSnapshot<SessionSnapshot>` 与 `loadOlder()`（仅文档注释与分页粒度说明有差异）。四项探针在四个版本上结果完全一致，与 rc.1 实测基线吻合，故 `package.json` 的 `dshReleases` 矩阵将 0.1.7 全线声明为 `compatible`；alpha.1/alpha.2/rc.2 为静态证据，未经真实 Profile 实机验证。
+
+> ⚠️ 这些包在 npm 的 `latest` 标签常常滞后（多数 client 包 `latest` 仍可能是 `0.0.1-rc.1`，而 `@deepseek-ai/dsh` 的 `latest` 现为 0.1.5-rc.3、`next` 为 0.1.7-rc.2、`alpha` 为 0.1.7-alpha.2）。升级依赖时请显式写具体版本或 `alpha`/`next` 标签，**不要用 `@latest`**。
 
 > dsh CLI 升级后无需重装 profile：基底包（`dsh-base`、`dsh-web-app` 等）按"安装优先"从 CLI 自身解析，profile 里的行会自动跟到新版本。
 
