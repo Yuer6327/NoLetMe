@@ -39,8 +39,23 @@ jobs:
       - name: Build
         run: pnpm build
 
-      # 未 bump 版本时 npm 返回 403，本步失败 → CI 红，倒逼每个发布提交都 bump
+      # 幂等发布：版本已在 npm 上时跳过（不重发、不假红）。
+      # 非 release 提交（文档/工具）不被迫 bump 版本；真正的新版本照常自动发布。
+      - name: Check version on npm
+        id: published
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is already on npm, publish will be skipped"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is new, will publish"
+          fi
+
       - name: Publish to npm
+        if: steps.published.outputs.exists != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: pnpm publish --no-git-checks
