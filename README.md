@@ -205,7 +205,11 @@ pnpm typecheck    # 可选；tsc --noEmit
 pnpm test         # 计数引擎 + 灰测探针 + dsh-std Community v0.15 清单契约
 pnpm calibrate    # 灰测阈值校准（克隆 modeltest 冻结聚合做负样本回归）
 pnpm build        # tsdown → lib/index.js（node 半边）+ lib/std/host.js（dsh-std facet）+ lib/client.js（浏览器包）
+pnpm dsh-releases check   # 对比 DSH STORE 最新三版滚动窗口与 dshReleases 矩阵（退出码 2 = 有未声明版本）
+pnpm dsh-releases probe <dsh版本>…  # 对指定 dsh 发行版逐项跑静态契约探针（种子表/shell.overlay/chat.legacy/SessionFace）
 ```
+
+`verify-dsh-releases.mjs` 是 `dshReleases` 矩阵的证据工具：DSH STORE 的滚动窗口取 `@deepseek-ai/dsh` 按发布时间最新的三个非弃用发行版，窗口内任一版本缺精确 `compatible` 记录条目就会被暂时下架。探针通过只构成静态发行物证据，不等于真实 Profile 实机验收。
 
 客户端依赖（`@deepseek-ai/dsh-client-*`）只用于**构建与类型检查**，精确锁在 **0.1.7-rc.2**（npm `@deepseek-ai/dsh` 的 `next` 标签；`latest` 现为 0.1.5-rc.3、`alpha` 为 0.1.7-alpha.2）。它们不进运行时产物——`lib/client.js` 除宿主种子模块外不带任何 `@deepseek-ai/*` 依赖，**跨版本兼容由结构读取保证，而不是由依赖范围保证**。浏览器包只 `require` rc.7∩rc.8∩0.1.1∩0.1.2∩0.1.3∩0.1.5∩0.1.6∩0.1.7 的平台种子模块（`react`、`cordis`、`dsh-client-ui-slots`、`dsh-client-ui-primitives`）；宿主种子表自 0.1.6 起扩到 9 项（新增 `dsh-client-ui-dockkit`，0.1.7 未变），那 7 项始终是子集，所以既**不** `require` 0.1.2 新增的 `dsh-client-store`，也**不** `require` `dsh-client-ui-dockkit`（旧宿主种子表没有它们）。会话快照按结构子集读取：rc.7–0.1.1 用顶层 `nodes`/`partial`（必要时回退 `chat.legacy`）；0.1.2+ 把节点从 `SessionFace` 拆到 `uiConversation.views.get('chat').legacy`（0.1.6/0.1.7 下该切片为 `{nodes, turnTimings, turnEnds, partial, runningCalls}`，`nodes`/`partial` 语义未变，新增的两个 Map 未被用到），插件惰性合并两路，且 `dsh.client.inject` 不再列出已删除的 `dsh-client-runtime`（否则新宿主组图会失败）。旧宿主仍通过 cordis `sessions` 服务等待，不依赖 graph 边。
 
